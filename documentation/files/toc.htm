@@ -1,0 +1,240 @@
+<!DOCTYPE HTML PUBLIC "-//IETF//DTD HTML//EN">
+<html>
+
+  <head>
+    <meta name="generator" content="HelpNDoc Freeware Edition">
+    <link rel="StyleSheet" href="toc.css" type="text/css"/>
+    <script type="text/javascript" src="jquery.min.js"></script>
+    <script type="text/javascript" src="jquery.cookie.js"></script>
+    <script type="text/javascript" src="jquery.treeview.min.js"></script>
+    <script type="text/javascript" src="jquery.rich-array-hnd.js"></script>
+    <script type="text/javascript" src="searchdata.js"></script>
+    <script type="text/javascript"><!--
+      $(document).ready(function(){
+        $("#toc").treeview(
+        {collapsed: true}
+        )
+        $("#keywords").treeview({collapsed: true});
+        $(document.body).click(function(e){var $target = $(e.target); if($target.is("a")) return; hidePopup();});
+        $(function(){var tabContainers = $("div.tabs > div");tabContainers.hide().filter(":first").show();$("div.tabs ul.tabNavigation a").click(function(){tabContainers.hide();
+        tabContainers.filter(this.hash).show();$("div.tabs ul.tabNavigation a").removeClass("selected");$(this).addClass("selected");return false;}).filter(":first").click();});
+      });
+      function hidePopup() {if($("#popupMenu")) $("#popupMenu").remove();}
+      function showPopup(oSender,aLinks){hidePopup();if (aLinks==0) return true;var oParentDiv=document.createElement("DIV");oParentDiv.id="popupMenu";var oLink,oBr=null;
+      for (var nCnt=0;nCnt<aLinks.length;nCnt++){oLink=document.createElement("A");oLink.innerHTML=aLinks[nCnt][0];oLink.href=aLinks[nCnt][1];oLink.target="FrameMain";oLink.onclick=hidePopup;
+      oParentDiv.appendChild(oLink);if (nCnt<aLinks.length-1){oBr=document.createElement("BR");oParentDiv.appendChild(oBr);}}document.body.appendChild(oParentDiv);var pos=$(oSender).offset(); 
+      var height=$(oSender).height();$(oParentDiv).css({"backgroundColor": "#EEEEEE","border": "1px solid #999999","position": "absolute","left": (pos.left+20)+"px","top": (pos.top+height+5)+"px",
+      "padding": 5+"px"});$(oParentDiv).show();return false;}
+      function performSearch(){sValue = $("#search_value").val().toLowerCase();var aValues = sValue.split(" ");var aFinalResults = [];for (var nValue = 0; nValue < aValues.length; nValue++){if (aValues[nValue] == "") continue;var aResults = oSearchData[aValues[nValue]];if (aResults && aResults.length > 0){if (nValue == 0) aFinalResults = aResults
+else aFinalResults = jQuery.richArray.intersect(aFinalResults, aResults);}else{aFinalResults = [];break;}}if (aFinalResults.length > 0){$("#search_results").html("Found " + aFinalResults.length + " results");for (var nCnt = 0; nCnt < aFinalResults.length; nCnt++){var oElmt = document.createElement("DIV");oElmt.innerHTML = "<a href='" + aFinalResults[nCnt][0] + "?search=" + sValue + "' target='FrameMain'>" + aFinalResults[nCnt][1] + "</a> (" + aFinalResults[nCnt][2] + ")<br/>";$(oElmt).appendTo($("#search_results"));}}else{$("#search_results").html("No result found");}}
+    //--></script>
+    <style type="text/css">
+      ul.tabNavigation{list-style: none;margin: 0;padding: 10px;}ul.tabNavigation li{display: inline;}ul.tabNavigation li A{padding: 3px 5px;background-color: #ccc;color: #000;
+      text-decoration: none;}ul.tabNavigation li A.selected,ul.tabNavigation li A:hover{background-color: #333;color: #fff;}ul.tabNavigation li A:focus{outline: 0;}
+      </style>
+  </head>
+
+  <body>
+  
+    <div class="tabs">
+      <ul class="tabNavigation">
+        <li><a href="#tab_toc">Contents</a></li>
+        <li><a href="#tab_keywords">Index</a></li>
+        <li><a href="#tab_search">Search</a></li>
+      </ul>
+      <div id="tab_toc">
+        <ul id="toc" class="filetree">
+          
+          <li>
+            <a href="Introduction.html" class="folder" target="FrameMain">Introduction</a>
+            <ul>
+              
+              <li>
+                <a href="Welcome.html" class="file" target="FrameMain">About</a>
+              </li>
+              
+              <li>
+                <a href="Whatsnew.html" class="file" target="FrameMain">What's new</a>
+              </li>
+              
+              <li>
+                <a href="Sponsor.html" class="file" target="FrameMain">Sponsor</a>
+              </li>
+              
+              <li>
+                <a href="FutureWork.html" class="file" target="FrameMain">Future Work</a>
+              </li>
+            </ul>
+          </li>
+          
+          <li>
+            <a href="Copyright.html" class="folder" target="FrameMain">Copyright</a>
+            <ul>
+              
+              <li>
+                <a href="GPL.html" class="file" target="FrameMain">GPL</a>
+              </li>
+            </ul>
+          </li>
+          
+          <li>
+            <a href="GettingStarted.html" class="folder" target="FrameMain">Getting Started</a>
+            <ul>
+              
+              <li>
+                <a href="Installation.html" class="file" target="FrameMain">Installation</a>
+              </li>
+              
+              <li>
+                <a href="Systemrequirements.html" class="file" target="FrameMain">System requirements</a>
+              </li>
+              
+              <li>
+                <a href="BasicOperation.html" class="file" target="FrameMain">Basic Operation</a>
+              </li>
+              
+              <li>
+                <a href="Gettinghelp.html" class="file" target="FrameMain">Getting help</a>
+              </li>
+            </ul>
+          </li>
+          
+          <li>
+            <a href="Calibration.html" class="folder" target="FrameMain">Calibration</a>
+            <ul>
+              
+              <li>
+                <a href="LoadCalibration.html" class="file" target="FrameMain">Load Calibration</a>
+              </li>
+              
+              <li>
+                <a href="SetCalibration.html" class="file" target="FrameMain">Set Calibration</a>
+              </li>
+            </ul>
+          </li>
+          
+          <li>
+            <a href="Measurement.html" class="folder" target="FrameMain">Working with Measurement Files</a>
+            <ul>
+              
+              <li>
+                <a href="LoadMeasurement.html" class="file" target="FrameMain">Load Measurement</a>
+              </li>
+              
+              <li>
+                <a href="PlayMeasurement.html" class="file" target="FrameMain">Play Measurement</a>
+              </li>
+            </ul>
+          </li>
+          
+          <li>
+            <a href="Speed.html" class="folder" target="FrameMain">Speed</a>
+            <ul>
+              
+              <li>
+                <a href="Slow.html" class="file" target="FrameMain">Slow</a>
+              </li>
+              
+              <li>
+                <a href="Fast.html" class="file" target="FrameMain">Fast</a>
+              </li>
+              
+              <li>
+                <a href="Impulse.html" class="file" target="FrameMain">Impulse</a>
+              </li>
+            </ul>
+          </li>
+          
+          <li>
+            <a href="Weighting.html" class="folder" target="FrameMain">Weighting</a>
+            <ul>
+              
+              <li>
+                <a href="AWeighting.html" class="file" target="FrameMain">A Weighting</a>
+              </li>
+              
+              <li>
+                <a href="CWeighting.html" class="file" target="FrameMain">C Weighting</a>
+              </li>
+              
+              <li>
+                <a href="FlatWeighting.html" class="file" target="FrameMain">Flat Weighting</a>
+              </li>
+            </ul>
+          </li>
+          
+          <li>
+            <a href="AnalysisModes.html" class="folder" target="FrameMain">Analysis Modes</a>
+            <ul>
+              
+              <li>
+                <a href="LpMode.html" class="file" target="FrameMain">Lp Mode</a>
+              </li>
+              
+              <li>
+                <a href="LEQMode.html" class="file" target="FrameMain">LEQ Mode</a>
+              </li>
+              
+              <li>
+                <a href="Band.html" class="file" target="FrameMain">Band Mode</a>
+              </li>
+              
+              <li>
+                <a href="NCRC.html" class="file" target="FrameMain">NC/RC Mode</a>
+              </li>
+              
+              <li>
+                <a href="PSD.html" class="file" target="FrameMain">PSD Mode</a>
+              </li>
+              
+              <li>
+                <a href="Spectrogram.html" class="file" target="FrameMain">Spectrogram Mode</a>
+              </li>
+            </ul>
+          </li>
+          
+          <li>
+            <a href="SavingPlotsandAnalysis.html" class="folder" target="FrameMain">Saving Plots and Analysis</a>
+            <ul>
+              
+              <li>
+                <a href="SaveAnalysis.html" class="file" target="FrameMain">Save Analysis</a>
+              </li>
+              
+              <li>
+                <a href="SavePlot.html" class="file" target="FrameMain">Save Plot</a>
+              </li>
+            </ul>
+          </li>
+          
+          <li>
+            <a href="FAQ.html" class="folder" target="FrameMain">FAQ</a>
+            <ul>
+              
+              <li>
+                <a href="EnterData.html" class="file" target="FrameMain">Why Won't the Dialog Box Accept My Data Entry?</a>
+              </li>
+              
+              <li>
+                <a href="WhyDoesVSLMTakeSoLongToStart.html" class="file" target="FrameMain">Why Does VSLM Take So Long To Start?</a>
+              </li>
+              
+              <li>
+                <a href="contributions.html" class="file" target="FrameMain">How Can I Contribute To Further Development?</a>
+              </li>
+            </li>
+        </ul>
+      </div>
+      
+      <div id="tab_keywords">
+        <ul id="keywords" class="filetree">
+        </ul>
+      </div>
+      <div id="tab_search" style="padding:10px">
+        Search: <form onsubmit="performSearch(); return false;"><input id="search_value"></input><input type="submit" value="search"/></form><div id="search_results"></div>
+      </div>
+    </div>
+  </div>
+</body>
+
+</html>

@@ -22,9 +22,12 @@
 
 % Edit the above text to modify the response to xproducthelp vslm
 
-% V0.4.2 Update 01-Oct-2016 move code from sourceforge to github and start using git revision control.  Remove explicit references to v0_4_1 and now use revision
-% numbering with release and in these comments info but not within code filenameesitself%
-% V0.4.2 Update 16-Aug-2016 by Elsa Piollet, <elsa.piollet@polymtl.ca: changed wavread to audioread for compatibility with Matlab 2015 and later
+% V0.4.2 Update 01-Oct-2016 move code from sourceforge to github and start 
+% using git revision control.  Remove explicit references to v0_4_1 and now 
+% use revision numbering with release and in these comments info but not 
+% within code filenameesitself
+% V0.4.2 Update 16-Aug-2016 by Elsa Piollet, <elsa.piollet@polymtl.ca>
+% changed wavread to audioread for compatibility with Matlab 2015 and later
 % V0.4.1 Initial public release on sourceforge in 2011
 
 % Begin initialization code - DO NOT EDIT
@@ -162,7 +165,6 @@ guidata(hObject, handles);
 
 % UIWAIT makes vslm wait for user response (see UIRESUME)
 % uiwait(handles.figure1);
-
 
 % --- Outputs from this function are returned to the command line.
 function varargout = vslm_OutputFcn(~, ~, handles) 
@@ -792,8 +794,6 @@ if n1==idx
     p=sx(idx);
 else
     n2=ceil(idx);
-    x1=sx(n1);
-    x2=sx(n2);
     p=interp1([n1,n2],[sx(n1),sx(n2)],idx);
 end
 

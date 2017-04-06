@@ -22,7 +22,7 @@
 
 % Edit the above text to modify the response to xproducthelp vslm_0_4_1
 
-% Last Modified by GUIDE v2.5 18-May-2011 22:05:02
+% Update 16-Aug-2016 by Elsa Piollet, <elsa.piollet@polymtl.ca: changed wavread to audioread for compatibility with Matlab 2015 and later
 
 % Begin initialization code - DO NOT EDIT
 gui_Singleton = 1;
@@ -318,8 +318,8 @@ switch filename
     otherwise
         fullfilename=[pathname,filename];
         % get the sample rate and filesize
-        [~,fs]=wavread(fullfilename,1);
-        fsize=wavread(fullfilename,'size');
+        [~,fs]=audioread(fullfilename,1);
+        fsize=size(audioread(fullfilename));
         
         if all(fs~=[22050,44100,48000,96000])           
             % if we get here, fs is not one of our four allowed fs values
@@ -352,7 +352,7 @@ switch filename
                 Nsamp=fsize(1);
             end %if fsize(1)>handles.cal.maxlen*fs;            
             
-            data=wavread(fullfilename,[1,Nsamp]);
+            data=audioread(fullfilename,[1,Nsamp]);
             caldata=data(:,1);
             calrms=sqrt(mean(abs(caldata).^2));
             calfactor=calpa/calrms;
@@ -389,7 +389,7 @@ switch filename
         % If we get here the user cancelled out - do nothing
     otherwise
         fullfilename=[pathname,filename];  % create the full filename for subsequent processing
-        [~,fs]=wavread(fullfilename,1); % read the first sample to get the sample rate
+        [~,fs]=audioread(fullfilename,[1,1]); % read the first sample to get the sample rate
         if all(fs~=[22050,44100,48000,96000])
             
             % if we get here, fs is not one of our four allowed fs values
@@ -404,7 +404,7 @@ switch filename
         bsize=fs*0.02;  % set the basic block size for a 20 ms segment
         
         % find the file size of file truncated to integer number bsize segments
-        filesize=wavread(fullfilename,'size');  % get file size in samples
+        filesize=size(audioread(fullfilename));  % get file size in samples
         if filesize(2)>1
             h=warndlg('Multiple Channels Detected.  Only Channel 1 will be Analyzed');
             waitfor(h)
@@ -520,7 +520,7 @@ Klast=0;  % starting index for the square pressure
 ppeak=0;
 tpeak=0;
 for I=1:Nseg
-    data=cal.*wavread(filename,N(I:I+1));
+    data=cal.*audioread(filename,N(I:I+1));
     data2=(apply_weighting(data(:,1),fs,handles.weighting)).^2;
  
     % because we are reading the file in separated segments we cannot simply use
@@ -639,7 +639,7 @@ function analyze_leq(hObject,handles)
 % you can change the 100ms to another number by changing handles.leq.mindt
 
 filename=handles.meas.fullfile;
-filesize=wavread(filename,'size');
+filesize=size(audioread(filename));
 fsize=filesize(1);
 fs=handles.meas.fs;
 
@@ -662,7 +662,7 @@ msq=zeros(Nseg,1);  % create the array for the saving mean square computations
 h=waitbar(0,'Please Wait ... Computing 0.1s LEQs');
 for I=1:Nseg
     % read in the dt length segment, calibrate, apply weighting, and square
-    data=handles.cal.scale.*wavread(filename,N(I:I+1));
+    data=handles.cal.scale.*audioread(filename,N(I:I+1));
     data2=(apply_weighting(data(:,1),fs,handles.weighting)).^2;  % make sure to take only channel 1
     
     % for each dt time period, find the msq
@@ -833,7 +833,7 @@ switch handles.psd.window
         win=window(@flattopwin,Nfft);
 end
 for J=1:Nseg
-    data=handles.cal.scale.*wavread(filename,N(J:J+1));
+    data=handles.cal.scale.*audioread(filename,N(J:J+1));
     [Pxx(J,:),fxx]=pwelch(data(:,1),win,Noverlap,Nfft,fs);
     H=acfilter(fxx',handles.weighting);
     Pxx(J,:)=Pxx(J,:).*abs(H).^2;
@@ -881,7 +881,7 @@ dt=handles.spec.dt;
 fs=handles.meas.fs;
 dtI=floor(fs*dt);  % compute the number of samples in each segment
 filename=handles.meas.fullfile;
-filesize=wavread(filename,'size');
+filesize=size(audioread(filename));
 fsize=filesize(1);
 
 if fsize>dtI
@@ -903,7 +903,7 @@ dstring=sprintf('Please Wait ... Computing %1.1f s X %d pt PSDs',dt,Nfft);
 h=waitbar(0,dstring);
 for I=1:Nseg
     % read in the dt length segment, calibrate, apply weighting, and square
-    data=handles.cal.scale.*wavread(filename,N(I:I+1)); % read in the segment of the wave file
+    data=handles.cal.scale.*audioread(filename,N(I:I+1)); % read in the segment of the wave file
     [Pxx(:,I),fxx]=pwelch(data(:,1),Nfft,Noverlap,Nfft,fs);  % compute the PSD
     H=acfilter(fxx,handles.weighting); % compute the Weighting filter based on fxx
     Pxx(:,I)=Pxx(:,I).*abs(H).^2; % apply the weighting filter in the freq domain
@@ -962,14 +962,14 @@ h=waitbar(0,'Please Wait ... Computing Band Levels');
 
 % break the wave file into segments that are multiples of NFFT, truncating
 % the very end of the file. 
-filesize=wavread(filename,'size');  % get file size in samples
+filesize=size(audioread(filename));  % get file size in samples
 Nseg=floor(filesize(1)/Nfft); % break into Nfft size segments
 N=1:Nfft:Nseg*Nfft;
 
 SB=0;
 fxx=linspace(0,fs/2,Nfft/2+1);
 for J=1:Nseg-1
-    data=handles.cal.scale.*wavread(filename,[N(J),N(J+1)-1]);  % read in the data for the segment and scale
+    data=handles.cal.scale.*audioread(filename,[N(J),N(J+1)-1]);  % read in the data for the segment and scale
     dataFFT=fft(data)/Nfft*sqrt(2);  % Take FFT and scale so the spectral amplitude is correct
     SP2=dataFFT.*conj(dataFFT);  % get square magnitude of FFT to get power spectrum
     SP=SP2(1:1+Nfft/2);  %extract the data from 0 to fs/2
@@ -1048,7 +1048,7 @@ function analyze_bandansi(hObject, handles)
 filename=handles.meas.fullfile;
 %fsize=handles.meas.fsize;
 fs=handles.meas.fs;
-filesize=wavread(filename,'size');
+filesize=size(audioread(filename));
 fsize=filesize(1);
 
 dt=0.1; % set system to read 100 ms buffers
@@ -1098,7 +1098,7 @@ end % for I=1:length(fc)
 ms=zeros(Nseg,length(fc));
 h=waitbar(0,dstring);
 for J=1:Nseg
-    data1=handles.cal.scale.*wavread(filename,[N(J),N(J+1)-1]);
+    data1=handles.cal.scale.*audioread(filename,[N(J),N(J+1)-1]);
     data1=apply_weighting(data1(:,1),handles.meas.fs,handles.weighting); % apply weighting filter and overwrite data1
     
     % do all the filters on that segment before reading the next segment
@@ -1187,7 +1187,7 @@ Nfft=2^16;
 % break the wave file into segments that are multiples of NFFT, truncating
 % the very end of the file. 
 
-filesize=wavread(filename,'size');  % get file size in samples
+filesize=size(audioread(filename));  % get file size in samples
 Nseg=floor(filesize(1)/Nfft); % break into Nfft size segments
 N=1:Nfft:Nseg*Nfft;
 
@@ -1197,7 +1197,7 @@ fxx=linspace(0,fs/2,Nfft/2+1);
 h=waitbar(0,'Please Wait ... Computing Unweighted Octave Band Levels');
 for J=1:Nseg-1
     
-    data=handles.cal.scale.*wavread(filename,[N(J),N(J+1)-1]);
+    data=handles.cal.scale.*audioread(filename,[N(J),N(J+1)-1]);
     dataFFT=fft(data)/Nfft*sqrt(2);  % scale FFT data properly so that we
     SP2=dataFFT.*conj(dataFFT);  % get square magnitude of FFT
     SP=SP2(1:1+Nfft/2);  % grab only half the

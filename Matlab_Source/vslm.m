@@ -48,7 +48,7 @@ end
 
 
 % --- Executes just before vslm is made visible.
-function vslmOpeningFcn(hObject, ~, handles, varargin)
+function vslm_OpeningFcn(hObject, ~, handles, varargin)
 % This function has no output args, see OutputFcn.
 % hObject    handle to figure
 % eventdata  reserved - to be defined in a future version of MATLAB
@@ -451,7 +451,7 @@ switch filename
         handles.meas.len=measlen;
         handles.meas.Nseg=Nseg;
         handles.meas.N=N;
-        lp.dthize=fsize;
+        lp.dthsize=fsize;
         handles.meas.bsize=bsize;
 end % switch
 
@@ -1082,6 +1082,7 @@ end
 J= fcb<(fs/2/sqrt(2));
 fc=fcb(J);
 
+Hd=zeros(length(fc));
 for I=1:length(fc)
    switch handles.band.type
         case 'oct'
@@ -1251,7 +1252,7 @@ nccurves=[     78	61	47	36	28	22	18	14	12	11; ...
                 90.01	88	80	75	71	68	65	64	63	62; ...
                 90.02	90	84	79	75	72	71	70	68	68];
 ncval=[15;20;25;30;35;40;45;50;55;60;65;70];
-[~,~,NCcurve]=NCRC(Lp);
+[~,~,~]=NCRC(Lp);
 
 tstring=sprintf('Unweighted Octave Band LEQ computed using %d pt FFT',Nfft);
 tickmarks=1:length(fctxt);
@@ -1280,7 +1281,7 @@ h2=subplot(2,1,2,'Parent',handles.plots);
 set(h1,'position',[0.13,0.31,0.775,0.615]);
 set(h2,'position',[0.13,0.11,0.775,0.1]);
 axis off
-[ncstring,rcstring,NCcurve]=NCRC(Lp);
+[ncstring,rcstring,~]=NCRC(Lp);
 
 text(0,0.7,sprintf('NC Rating: %s',ncstring));
 text(0,0.0,sprintf('RC Mark II Rating: %s',rcstring));
@@ -2318,8 +2319,8 @@ function xabout_Callback(~, ~, ~)
 % hObject    handle to xabout (see GCBO)
 % eventdata  reserved - to be defined in a future version of MATLAB
 % handles    structure with handles and user data (see GUIDATA)
-message={'Virtual Sound Level Meter','Version 0.4.1','May 17, 2011', ...
-    'Copyright 2011 Ralph T Muehleisen','vslm.info@gmail.com'};
+message={'Virtual Sound Level Meter','Version 0.4.2','Apr 5, 2017', ...
+    'Copyright 2017 Ralph T Muehleisen','vslm.info@gmail.com'};
 msgbox(message,'About VSLM')
 
 
@@ -2514,5 +2515,19 @@ guidata(hObject,handles);
 % --------------------------------------------------------------------
 function xbandres_Callback(~, ~, ~)
 % hObject    handle to xbandres (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    structure with handles and user data (see GUIDATA)
+
+
+% --- Executes during object creation, after setting all properties.
+function figure1_CreateFcn(hObject, eventdata, handles)
+% hObject    handle to figure1 (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    empty - handles not created until after all CreateFcns called
+
+
+% --- Executes during object deletion, before destroying properties.
+function figure1_DeleteFcn(hObject, eventdata, handles)
+% hObject    handle to figure1 (see GCBO)
 % eventdata  reserved - to be defined in a future version of MATLAB
 % handles    structure with handles and user data (see GUIDATA)

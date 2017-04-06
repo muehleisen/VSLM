@@ -1,35 +1,38 @@
-  function varargout = vslm_0_4_1(varargin)
-% VSLM_0_4_1 M-file for vslm_0_4_1.fig
-%      VSLM_0_4_1, by itself, creates a new VSLM_0_4_1 or raises the existing
+  function varargout = vslm(varargin)
+% VSLM_M-file for vslm.fig
+%      VSLM, by itself, creates a new VSLM or raises the existing
 %      singleton*.
 %
-%      H = VSLM_0_4_1 returns the handle to a new VSLM_0_4_1 or the handle to
+%      H = VSLM returns the handle to a new VSLM or the handle to
 %      the existing singleton*.
 %
-%      VSLM_0_4_1('CALLBACK',hObject,eventData,handles,...) calls the local
-%      function named CALLBACK in VSLM_0_4_1.M with the given input arguments.
+%      VSLM('CALLBACK',hObject,eventData,handles,...) calls the local
+%      function named CALLBACK in VSLM.M with the given input arguments.
 %
-%      VSLM_0_4_1('Property','Value',...) creates a new VSLM_0_4_1 or raises the
+%      VSLM('Property','Value',...) creates a new VSLM or raises the
 %      existing singleton*.  Starting from the left, property value pairs are
-%      applied to the GUI before vslm_0_4_1_OpeningFcn gets called.  An
+%      applied to the GUI before vslm_OpeningFcn gets called.  An
 %      unrecognized property name or invalid value makes property application
-%      stop.  All inputs are passed to vslm_0_4_1_OpeningFcn via varargin.
+%      stop.  All inputs are passed to vslm_OpeningFcn via varargin.
 %
 %      *See GUI Options on GUIDE'Slow Tools menu.  Choose "GUI allows only one
 %      instance to run (singleton)".
 %
 % See also: GUIDE, GUIDATA, GUIHANDLES
 
-% Edit the above text to modify the response to xproducthelp vslm_0_4_1
+% Edit the above text to modify the response to xproducthelp vslm
 
-% Update 16-Aug-2016 by Elsa Piollet, <elsa.piollet@polymtl.ca: changed wavread to audioread for compatibility with Matlab 2015 and later
+% V0.4.2 Update 01-Oct-2016 move code from sourceforge to github and start using git revision control.  Remove explicit references to v0_4_1 and now use revision
+% numbering with release and in these comments info but not within code filenameesitself%
+% V0.4.2 Update 16-Aug-2016 by Elsa Piollet, <elsa.piollet@polymtl.ca: changed wavread to audioread for compatibility with Matlab 2015 and later
+% V0.4.1 Initial public release on sourceforge in 2011
 
 % Begin initialization code - DO NOT EDIT
 gui_Singleton = 1;
 gui_State = struct('gui_Name',       mfilename, ...
                    'gui_Singleton',  gui_Singleton, ...
-                   'gui_OpeningFcn', @vslm_0_4_1_OpeningFcn, ...
-                   'gui_OutputFcn',  @vslm_0_4_1_OutputFcn, ...
+                   'gui_OpeningFcn', @vslm_OpeningFcn, ...
+                   'gui_OutputFcn',  @vslm_OutputFcn, ...
                    'gui_LayoutFcn',  [] , ...
                    'gui_Callback',   []);
 if nargin && ischar(varargin{1})
@@ -44,13 +47,13 @@ end
 % End initialization code - DO NOT EDIT
 
 
-% --- Executes just before vslm_0_4_1 is made visible.
-function vslm_0_4_1_OpeningFcn(hObject, ~, handles, varargin)
+% --- Executes just before vslm is made visible.
+function vslmOpeningFcn(hObject, ~, handles, varargin)
 % This function has no output args, see OutputFcn.
 % hObject    handle to figure
 % eventdata  reserved - to be defined in a future version of MATLAB
 % handles    structure with handles and user data (see GUIDATA)
-% varargin   command line arguments to vslm_0_4_1 (see VARARGIN)
+% varargin   command line arguments to vslm (see VARARGIN)
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% IMPORTANT %%%%%%%%%%%%%%%%%%%
 if 1==1
@@ -61,7 +64,7 @@ end
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% IMPORTANT %%%%%%%%%%%%%%%%%%%
 
 
-% Choose default command line output for vslm_0_4_1
+% Choose default command line output for vslm
 handles.output = hObject;
 
 % set max array size to load in one hunk.
@@ -157,12 +160,12 @@ handles.last.analysis='none';
 % Update handles structure
 guidata(hObject, handles);
 
-% UIWAIT makes vslm_0_4_1 wait for user response (see UIRESUME)
+% UIWAIT makes vslm wait for user response (see UIRESUME)
 % uiwait(handles.figure1);
 
 
 % --- Outputs from this function are returned to the command line.
-function varargout = vslm_0_4_1_OutputFcn(~, ~, handles) 
+function varargout = vslm_OutputFcn(~, ~, handles) 
 % varargout  cell array for returning output args (see VARARGOUT);
 % hObject    handle to figure
 % eventdata  reserved - to be defined in a future version of MATLAB

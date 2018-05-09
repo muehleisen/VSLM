@@ -1,35 +1,41 @@
-  function varargout = vslm_0_4_1(varargin)
-% VSLM_0_4_1 M-file for vslm_0_4_1.fig
-%      VSLM_0_4_1, by itself, creates a new VSLM_0_4_1 or raises the existing
+  function varargout = vslm(varargin)
+% VSLM_M-file for vslm.fig
+%      VSLM, by itself, creates a new VSLM or raises the existing
 %      singleton*.
 %
-%      H = VSLM_0_4_1 returns the handle to a new VSLM_0_4_1 or the handle to
+%      H = VSLM returns the handle to a new VSLM or the handle to
 %      the existing singleton*.
 %
-%      VSLM_0_4_1('CALLBACK',hObject,eventData,handles,...) calls the local
-%      function named CALLBACK in VSLM_0_4_1.M with the given input arguments.
+%      VSLM('CALLBACK',hObject,eventData,handles,...) calls the local
+%      function named CALLBACK in VSLM.M with the given input arguments.
 %
-%      VSLM_0_4_1('Property','Value',...) creates a new VSLM_0_4_1 or raises the
+%      VSLM('Property','Value',...) creates a new VSLM or raises the
 %      existing singleton*.  Starting from the left, property value pairs are
-%      applied to the GUI before vslm_0_4_1_OpeningFcn gets called.  An
+%      applied to the GUI before vslm_OpeningFcn gets called.  An
 %      unrecognized property name or invalid value makes property application
-%      stop.  All inputs are passed to vslm_0_4_1_OpeningFcn via varargin.
+%      stop.  All inputs are passed to vslm_OpeningFcn via varargin.
 %
 %      *See GUI Options on GUIDE'Slow Tools menu.  Choose "GUI allows only one
 %      instance to run (singleton)".
 %
 % See also: GUIDE, GUIDATA, GUIHANDLES
 
-% Edit the above text to modify the response to xproducthelp vslm_0_4_1
+% Edit the above text to modify the response to xproducthelp vslm
 
-% Last Modified by GUIDE v2.5 18-May-2011 22:05:02
+% V0.4.2 Update 01-Oct-2016 move code from sourceforge to github and start 
+% using git revision control.  Remove explicit references to v0_4_1 and now 
+% use revision numbering with release and in these comments info but not 
+% within code filename itself
+% V0.4.2 Update 16-Aug-2016 by Elsa Piollet, <elsa.piollet@polymtl.ca>
+% changed wavread to audioread for compatibility with Matlab 2015 and later
+% V0.4.1 Initial public release on sourceforge in 2011
 
 % Begin initialization code - DO NOT EDIT
 gui_Singleton = 1;
 gui_State = struct('gui_Name',       mfilename, ...
                    'gui_Singleton',  gui_Singleton, ...
-                   'gui_OpeningFcn', @vslm_0_4_1_OpeningFcn, ...
-                   'gui_OutputFcn',  @vslm_0_4_1_OutputFcn, ...
+                   'gui_OpeningFcn', @vslm_OpeningFcn, ...
+                   'gui_OutputFcn',  @vslm_OutputFcn, ...
                    'gui_LayoutFcn',  [] , ...
                    'gui_Callback',   []);
 if nargin && ischar(varargin{1})
@@ -44,13 +50,13 @@ end
 % End initialization code - DO NOT EDIT
 
 
-% --- Executes just before vslm_0_4_1 is made visible.
-function vslm_0_4_1_OpeningFcn(hObject, ~, handles, varargin)
+% --- Executes just before vslm is made visible.
+function vslm_OpeningFcn(hObject, ~, handles, varargin)
 % This function has no output args, see OutputFcn.
 % hObject    handle to figure
 % eventdata  reserved - to be defined in a future version of MATLAB
 % handles    structure with handles and user data (see GUIDATA)
-% varargin   command line arguments to vslm_0_4_1 (see VARARGIN)
+% varargin   command line arguments to vslm (see VARARGIN)
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% IMPORTANT %%%%%%%%%%%%%%%%%%%
 if 1==1
@@ -61,7 +67,7 @@ end
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% IMPORTANT %%%%%%%%%%%%%%%%%%%
 
 
-% Choose default command line output for vslm_0_4_1
+% Choose default command line output for vslm
 handles.output = hObject;
 
 % set max array size to load in one hunk.
@@ -157,12 +163,11 @@ handles.last.analysis='none';
 % Update handles structure
 guidata(hObject, handles);
 
-% UIWAIT makes vslm_0_4_1 wait for user response (see UIRESUME)
+% UIWAIT makes vslm wait for user response (see UIRESUME)
 % uiwait(handles.figure1);
 
-
 % --- Outputs from this function are returned to the command line.
-function varargout = vslm_0_4_1_OutputFcn(~, ~, handles) 
+function varargout = vslm_OutputFcn(~, ~, handles) 
 % varargout  cell array for returning output args (see VARARGOUT);
 % hObject    handle to figure
 % eventdata  reserved - to be defined in a future version of MATLAB
@@ -318,8 +323,8 @@ switch filename
     otherwise
         fullfilename=[pathname,filename];
         % get the sample rate and filesize
-        [~,fs]=wavread(fullfilename,1);
-        fsize=wavread(fullfilename,'size');
+        [~,fs]=audioread(fullfilename,[1,1]);
+        fsize=size(audioread(fullfilename));
         
         if all(fs~=[22050,44100,48000,96000])           
             % if we get here, fs is not one of our four allowed fs values
@@ -329,13 +334,13 @@ switch filename
         end % if all(fs~=[22050,44100,48000,96000])  
              
         string=inputdlg('Input Calibrator RMS Output in DB','Set Cal Value');
-        if ~isempty(string{1});
+        if ~isempty(string{1})
             % convert input string to number
             caldB=str2double(string{1});
             % generate a linear cal factor from the xlpbtn level
             calpa = 10.0.^((caldB-94)/20);
             
-            if fsize(2)>1;
+            if fsize(2)>1
                 h=warndlg('Warning, Multiple Channels Detected.  Only Channel 1 is read');
                 waitfor(h);
             end %if fsize(2)>1;
@@ -343,7 +348,7 @@ switch filename
             % check to see if the file is longer than the max allowed
             % length and set the max size to read in if it is
             Nsamp=handles.cal.maxlen*fs;
-            if fsize(1)>handles.cal.maxlen*fs;
+            if fsize(1)>handles.cal.maxlen*fs
                 dstring=sprintf('Calibration file truncated to %d sec',handles.cal.maxlen);
                 h=warndlg(dstring,'Cal File Truncated');
                 waitfor(h);
@@ -352,7 +357,7 @@ switch filename
                 Nsamp=fsize(1);
             end %if fsize(1)>handles.cal.maxlen*fs;            
             
-            data=wavread(fullfilename,[1,Nsamp]);
+            data=audioread(fullfilename,[1,Nsamp]);
             caldata=data(:,1);
             calrms=sqrt(mean(abs(caldata).^2));
             calfactor=calpa/calrms;
@@ -389,7 +394,7 @@ switch filename
         % If we get here the user cancelled out - do nothing
     otherwise
         fullfilename=[pathname,filename];  % create the full filename for subsequent processing
-        [~,fs]=wavread(fullfilename,1); % read the first sample to get the sample rate
+        [~,fs]=audioread(fullfilename,[1,1]); % read the first sample to get the sample rate
         if all(fs~=[22050,44100,48000,96000])
             
             % if we get here, fs is not one of our four allowed fs values
@@ -404,7 +409,7 @@ switch filename
         bsize=fs*0.02;  % set the basic block size for a 20 ms segment
         
         % find the file size of file truncated to integer number bsize segments
-        filesize=wavread(fullfilename,'size');  % get file size in samples
+        filesize=size(audioread(fullfilename));  % get file size in samples
         if filesize(2)>1
             h=warndlg('Multiple Channels Detected.  Only Channel 1 will be Analyzed');
             waitfor(h)
@@ -448,7 +453,7 @@ switch filename
         handles.meas.len=measlen;
         handles.meas.Nseg=Nseg;
         handles.meas.N=N;
-        lp.dthize=fsize;
+        lp.dthsize=fsize;
         handles.meas.bsize=bsize;
 end % switch
 
@@ -520,7 +525,7 @@ Klast=0;  % starting index for the square pressure
 ppeak=0;
 tpeak=0;
 for I=1:Nseg
-    data=cal.*wavread(filename,N(I:I+1));
+    data=cal.*audioread(filename,N(I:I+1));
     data2=(apply_weighting(data(:,1),fs,handles.weighting)).^2;
  
     % because we are reading the file in separated segments we cannot simply use
@@ -639,7 +644,7 @@ function analyze_leq(hObject,handles)
 % you can change the 100ms to another number by changing handles.leq.mindt
 
 filename=handles.meas.fullfile;
-filesize=wavread(filename,'size');
+filesize=size(audioread(filename));
 fsize=filesize(1);
 fs=handles.meas.fs;
 
@@ -662,7 +667,7 @@ msq=zeros(Nseg,1);  % create the array for the saving mean square computations
 h=waitbar(0,'Please Wait ... Computing 0.1s LEQs');
 for I=1:Nseg
     % read in the dt length segment, calibrate, apply weighting, and square
-    data=handles.cal.scale.*wavread(filename,N(I:I+1));
+    data=handles.cal.scale.*audioread(filename,N(I:I+1));
     data2=(apply_weighting(data(:,1),fs,handles.weighting)).^2;  % make sure to take only channel 1
     
     % for each dt time period, find the msq
@@ -735,7 +740,7 @@ rc=0.7;
 wstring=handles.weighting(1);
 if wstring=='F'
     wstring='';
-end;
+end
 text(lc,1.0,'LEQ Statistics computed from 100 ms LEQ');
 text(hlc,0.85,sprintf('Overall LEQ: %1.3G dB',handles.leq.overall_leq),'fontweight','bold');
 text(hrc,0.85,sprintf('%s Weighting Applied',handles.weighting));
@@ -789,8 +794,6 @@ if n1==idx
     p=sx(idx);
 else
     n2=ceil(idx);
-    x1=sx(n1);
-    x2=sx(n2);
     p=interp1([n1,n2],[sx(n1),sx(n2)],idx);
 end
 
@@ -800,7 +803,7 @@ function lineplot(x,y)
 % like bar except we just print the top line rather than the full bar
 %
 % Copyright 2011 Ralph T Muehleisen
-for I=1:(length(x)-1);
+for I=1:(length(x)-1)
     line([x(I);x(I+1)],[y(I);y(I)]);  % draw the line across
     line([x(I+1);x(I+1)],[y(I);y(I+1)]);  % draw the line up/down
 end
@@ -833,7 +836,7 @@ switch handles.psd.window
         win=window(@flattopwin,Nfft);
 end
 for J=1:Nseg
-    data=handles.cal.scale.*wavread(filename,N(J:J+1));
+    data=handles.cal.scale.*audioread(filename,N(J:J+1));
     [Pxx(J,:),fxx]=pwelch(data(:,1),win,Noverlap,Nfft,fs);
     H=acfilter(fxx',handles.weighting);
     Pxx(J,:)=Pxx(J,:).*abs(H).^2;
@@ -847,7 +850,7 @@ if Nr==1
     mPxx=Pxx;
 else
     mPxx=mean(Pxx);  %compute the average of all the 
-end;
+end
 
 Lpxx=10*log10(mPxx)+94;  % convert mean square pressure to a dB
 Lpmax=max(Lpxx);
@@ -881,7 +884,7 @@ dt=handles.spec.dt;
 fs=handles.meas.fs;
 dtI=floor(fs*dt);  % compute the number of samples in each segment
 filename=handles.meas.fullfile;
-filesize=wavread(filename,'size');
+filesize=size(audioread(filename));
 fsize=filesize(1);
 
 if fsize>dtI
@@ -903,7 +906,7 @@ dstring=sprintf('Please Wait ... Computing %1.1f s X %d pt PSDs',dt,Nfft);
 h=waitbar(0,dstring);
 for I=1:Nseg
     % read in the dt length segment, calibrate, apply weighting, and square
-    data=handles.cal.scale.*wavread(filename,N(I:I+1)); % read in the segment of the wave file
+    data=handles.cal.scale.*audioread(filename,N(I:I+1)); % read in the segment of the wave file
     [Pxx(:,I),fxx]=pwelch(data(:,1),Nfft,Noverlap,Nfft,fs);  % compute the PSD
     H=acfilter(fxx,handles.weighting); % compute the Weighting filter based on fxx
     Pxx(:,I)=Pxx(:,I).*abs(H).^2; % apply the weighting filter in the freq domain
@@ -962,14 +965,14 @@ h=waitbar(0,'Please Wait ... Computing Band Levels');
 
 % break the wave file into segments that are multiples of NFFT, truncating
 % the very end of the file. 
-filesize=wavread(filename,'size');  % get file size in samples
+filesize=size(audioread(filename));  % get file size in samples
 Nseg=floor(filesize(1)/Nfft); % break into Nfft size segments
 N=1:Nfft:Nseg*Nfft;
 
 SB=0;
 fxx=linspace(0,fs/2,Nfft/2+1);
 for J=1:Nseg-1
-    data=handles.cal.scale.*wavread(filename,[N(J),N(J+1)-1]);  % read in the data for the segment and scale
+    data=handles.cal.scale.*audioread(filename,[N(J),N(J+1)-1]);  % read in the data for the segment and scale
     dataFFT=fft(data)/Nfft*sqrt(2);  % Take FFT and scale so the spectral amplitude is correct
     SP2=dataFFT.*conj(dataFFT);  % get square magnitude of FFT to get power spectrum
     SP=SP2(1:1+Nfft/2);  %extract the data from 0 to fs/2
@@ -1048,7 +1051,7 @@ function analyze_bandansi(hObject, handles)
 filename=handles.meas.fullfile;
 %fsize=handles.meas.fsize;
 fs=handles.meas.fs;
-filesize=wavread(filename,'size');
+filesize=size(audioread(filename));
 fsize=filesize(1);
 
 dt=0.1; % set system to read 100 ms buffers
@@ -1079,6 +1082,7 @@ end
 J= fcb<(fs/2/sqrt(2));
 fc=fcb(J);
 
+Hd=zeros(length(fc));
 for I=1:length(fc)
    switch handles.band.type
         case 'oct'
@@ -1098,11 +1102,11 @@ end % for I=1:length(fc)
 ms=zeros(Nseg,length(fc));
 h=waitbar(0,dstring);
 for J=1:Nseg
-    data1=handles.cal.scale.*wavread(filename,[N(J),N(J+1)-1]);
+    data1=handles.cal.scale.*audioread(filename,[N(J),N(J+1)-1]);
     data1=apply_weighting(data1(:,1),handles.meas.fs,handles.weighting); % apply weighting filter and overwrite data1
     
     % do all the filters on that segment before reading the next segment
-    for I=1:length(fc);
+    for I=1:length(fc)
         data2=filter(Hd(I),data1);
         
         ms(J,I)=mean(abs(data2).^2);  % filter data and save the filter status so we 
@@ -1187,7 +1191,7 @@ Nfft=2^16;
 % break the wave file into segments that are multiples of NFFT, truncating
 % the very end of the file. 
 
-filesize=wavread(filename,'size');  % get file size in samples
+filesize=size(audioread(filename));  % get file size in samples
 Nseg=floor(filesize(1)/Nfft); % break into Nfft size segments
 N=1:Nfft:Nseg*Nfft;
 
@@ -1197,7 +1201,7 @@ fxx=linspace(0,fs/2,Nfft/2+1);
 h=waitbar(0,'Please Wait ... Computing Unweighted Octave Band Levels');
 for J=1:Nseg-1
     
-    data=handles.cal.scale.*wavread(filename,[N(J),N(J+1)-1]);
+    data=handles.cal.scale.*audioread(filename,[N(J),N(J+1)-1]);
     dataFFT=fft(data)/Nfft*sqrt(2);  % scale FFT data properly so that we
     SP2=dataFFT.*conj(dataFFT);  % get square magnitude of FFT
     SP=SP2(1:1+Nfft/2);  % grab only half the
@@ -1248,7 +1252,7 @@ nccurves=[     78	61	47	36	28	22	18	14	12	11; ...
                 90.01	88	80	75	71	68	65	64	63	62; ...
                 90.02	90	84	79	75	72	71	70	68	68];
 ncval=[15;20;25;30;35;40;45;50;55;60;65;70];
-[~,~,NCcurve]=NCRC(Lp);
+[~,~,~]=NCRC(Lp);
 
 tstring=sprintf('Unweighted Octave Band LEQ computed using %d pt FFT',Nfft);
 tickmarks=1:length(fctxt);
@@ -1277,7 +1281,7 @@ h2=subplot(2,1,2,'Parent',handles.plots);
 set(h1,'position',[0.13,0.31,0.775,0.615]);
 set(h2,'position',[0.13,0.11,0.775,0.1]);
 axis off
-[ncstring,rcstring,NCcurve]=NCRC(Lp);
+[ncstring,rcstring,~]=NCRC(Lp);
 
 text(0,0.7,sprintf('NC Rating: %s',ncstring));
 text(0,0.0,sprintf('RC Mark II Rating: %s',rcstring));
@@ -1336,7 +1340,7 @@ else
         % if we are above NC_sil at any freq, find the tangent NC at each frequency
         NCtan=0*Lp;  %preallocate NCtan
         for I=1:length(Lp)
-            if Lp(I)<nccurves(1,I);  % look for Lp < min NC value, and set NC=0 if it is
+            if Lp(I)<nccurves(1,I)  % look for Lp < min NC value, and set NC=0 if it is
                 NCtan(I)=0;
             elseif Lp(I)>nccurves(12,I) % look for Lp > max NC value, and set NC=100 if it is
                 NCtan(I)=100;
@@ -1544,8 +1548,26 @@ h=figure;
 copyobj(get(handles.plots,'Children'),h);
 set(h,'menubar','figure');
  exportsetupdlg(h);
+ 
+function setpdttime(hObject, handles)
+set(handles.lp.dth,'Checked','off');  % turn off the check on the current selection
+set(hObject,'checked','on');  % turn on the current checkmark
+handles.lp.dth=hObject;  % update the selection handle
+% save out changed handles
+guidata(hObject,handles);
 
-
+% --------------------------------------------------------------------
+function xlpdt20ms_Callback(hObject, ~, handles)
+% hObject    handle to xlpdt20ms (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    structure with handles and user data (see GUIDATA)
+handles.lp.dt=0.02;
+setpdttime(hObject, handles)
+% set(handles.lp.dth,'Checked','off');  % turn off the check on the current selection
+% set(hObject,'checked','on');  % turn on the current checkmark
+% handles.lp.dth=hObject;  % update the selection handle
+% % save out changed handles
+% guidata(hObject,handles);
 
 % --------------------------------------------------------------------
 function xlpdt100ms_Callback(hObject, ~, handles)
@@ -1554,11 +1576,7 @@ function xlpdt100ms_Callback(hObject, ~, handles)
 % handles    structure with handles and user data (see GUIDATA)
 
 handles.lp.dt=0.1;
-set(handles.lp.dth,'Checked','off');  % turn off the check on the current selection
-set(hObject,'checked','on');  % turn on the current checkmark
-handles.lp.dth=hObject;  % update the selection handle
-% save out changed handles
-guidata(hObject,handles);
+setpdttime(hObject, handles)
 
 % --------------------------------------------------------------------
 function xlpdt1s_Callback(hObject, ~, handles)
@@ -1566,33 +1584,23 @@ function xlpdt1s_Callback(hObject, ~, handles)
 % eventdata  reserved - to be defined in a future version of MATLAB
 % handles    structure with handles and user data (see GUIDATA)
 handles.lp.dt=1;
-set(handles.lp.dth,'Checked','off');  % turn off the check on the current selection
-set(hObject,'checked','on');  % turn on the current checkmark
-handles.lp.dth=hObject;  % update the selection handle
-guidata(hObject,handles);
+setpdttime(hObject, handles)
+
 % --------------------------------------------------------------------
 function xlpdt10s_Callback(hObject, ~, handles)
 % hObject    handle to xlpdt10s (see GCBO)
 % eventdata  reserved - to be defined in a future version of MATLAB
 % handles    structure with handles and user data (see GUIDATA)
 handles.lp.dt=10;
-set(handles.lp.dth,'Checked','off');  % turn off the check on the current selection
-set(hObject,'checked','on');  % turn on the current checkmark
-handles.lp.dth=hObject;  % update the selection handle
-% save out changed handles
-guidata(hObject,handles);
+setpdttime(hObject, handles)
 
 % --------------------------------------------------------------------
 function xlpdt1min_Callback(hObject, ~, handles)
 % hObject    handle to xlpdt1min (see GCBO)
 % eventdata  reserved - to be defined in a future version of MATLAB
 % handles    structure with handles and user data (see GUIDATA)
-handles.lp.dt=60000;
-set(handles.lp.dth,'Checked','off');  % turn off the check on the current selection
-set(hObject,'checked','on');  % turn on the current checkmark
-handles.lp.dth=hObject;  % update the selection handle
-% save out changed handles
-guidata(hObject,handles);
+handles.lp.dt=60;
+setpdttime(hObject, handles)
 
 
 % --------------------------------------------------------------------
@@ -1644,7 +1652,7 @@ answer=inputdlg(prompt,'Input Plot Limits',1,default,dlgoptions);
 if ~isempty(answer)
     set(handles.xlpplotauto,'Checked','off');  % turn off the check on the current selection
     set(hObject,'checked','on');  % turn on the current checkmark
-    handles.lp.plotscale=[str2num(answer{1}),str2num(answer{2}),str2num(answer{3}),str2num(answer{4})];
+    handles.lp.plotscale=[ustr2num(answer{1}),str2num(answer{2}),str2num(answer{3}),str2num(answer{4})];
 end
 guidata(hObject,handles);
 
@@ -1761,7 +1769,7 @@ answer=inputdlg('Input Percentile for LEQ','Input Percentile',1,{num2str(handles
 [val,status]=str2num(answer{1}); 
 if status % if the conversion is valid, reset the userpct value
   handles.leq.userpct=val;  
-end;  % if the if fails we cancelled so do not change anything
+end  % if the if fails we cancelled so do not change anything
 guidata(hObject,handles);
 
 
@@ -1778,6 +1786,11 @@ function xpsdNfftmnu_Callback(~, ~, ~)
 % eventdata  reserved - to be defined in a future version of MATLAB
 % handles    structure with handles and user data (see GUIDATA)
 
+function setpsdfftsize(hObject, handles)
+set(handles.psd.Nffth,'Checked','off');  % turn off the check on the current selection
+set(hObject,'checked','on');  % turn on the current checkmark
+handles.psd.Nffth=hObject;  % update the selection handle
+guidata(hObject,handles);
 
 % --------------------------------------------------------------------
 function xpsd256_Callback(hObject, ~, handles)
@@ -1785,21 +1798,14 @@ function xpsd256_Callback(hObject, ~, handles)
 % eventdata  reserved - to be defined in a future version of MATLAB
 % handles    structure with handles and user data (see GUIDATA)
 handles.psd.Nfft=256;
-set(handles.psd.Nffth,'Checked','off');  % turn off the check on the current selection
-set(hObject,'checked','on');  % turn on the current checkmark
-handles.psd.Nffth=hObject;  % update the selection handle
-guidata(hObject,handles);
-
+setpsdfftsize(hObject, handles)
 % --------------------------------------------------------------------
 function xpsd512_Callback(hObject, ~, handles)
 % hObject    handle to xpsd512 (see GCBO)
 % eventdata  reserved - to be defined in a future version of MATLAB
 % handles    structure with handles and user data (see GUIDATA)
 handles.psd.Nfft=512;
-set(handles.psd.Nffth,'Checked','off');  % turn off the check on the current selection
-set(hObject,'checked','on');  % turn on the current checkmark
-handles.psd.Nffth=hObject;  % update the selection handle
-guidata(hObject,handles);
+setpsdfftsize(hObject, handles)
 
 % --------------------------------------------------------------------
 function xpsd1k_Callback(hObject, ~, handles)
@@ -1807,10 +1813,7 @@ function xpsd1k_Callback(hObject, ~, handles)
 % eventdata  reserved - to be defined in a future version of MATLAB
 % handles    structure with handles and user data (see GUIDATA)
 handles.psd.Nfft=1024;
-set(handles.psd.Nffth,'Checked','off');  % turn off the check on the current selection
-set(hObject,'checked','on');  % turn on the current checkmark
-handles.psd.Nffth=hObject;  % update the selection handle
-guidata(hObject,handles);
+setpsdfftsize(hObject, handles)
 
 % --------------------------------------------------------------------
 function xpsd2k_Callback(hObject, ~, handles)
@@ -1818,10 +1821,7 @@ function xpsd2k_Callback(hObject, ~, handles)
 % eventdata  reserved - to be defined in a future version of MATLAB
 % handles    structure with handles and user data (see GUIDATA)
 handles.psd.Nfft=2048;
-set(handles.psd.Nffth,'Checked','off');  % turn off the check on the current selection
-set(hObject,'checked','on');  % turn on the current checkmark
-handles.psd.Nffth=hObject;  % update the selection handle
-guidata(hObject,handles);
+setpsdfftsize(hObject, handles)
 
 % --------------------------------------------------------------------
 function xpsd4k_Callback(hObject, ~, handles)
@@ -1829,21 +1829,14 @@ function xpsd4k_Callback(hObject, ~, handles)
 % eventdata  reserved - to be defined in a future version of MATLAB
 % handles    structure with handles and user data (see GUIDATA)
 handles.psd.Nfft=4096;
-set(handles.psd.Nffth,'Checked','off');  % turn off the check on the current selection
-set(hObject,'checked','on');  % turn on the current checkmark
-handles.psd.Nffth=hObject;  % update the selection handle
-guidata(hObject,handles);
-
+setpsdfftsize(hObject, handles)
 % --------------------------------------------------------------------
 function xpsd8k_Callback(hObject, ~, handles)
 % hObject    handle to xpsd8k (see GCBO)
 % eventdata  reserved - to be defined in a future version of MATLAB
 % handles    structure with handles and user data (see GUIDATA)
 handles.psd.Nfft=8192;
-set(handles.psd.Nffth,'Checked','off');  % turn off the check on the current selection
-set(hObject,'checked','on');  % turn on the current checkmark
-handles.psd.Nffth=hObject;  % update the selection handle
-guidata(hObject,handles);
+setpsdfftsize(hObject, handles)
 
 
 % --------------------------------------------------------------------
@@ -1859,6 +1852,12 @@ function xpsdwindowmnu_Callback(~, ~, ~)
 % eventdata  reserved - to be defined in a future version of MATLAB
 % handles    structure with handles and user data (see GUIDATA)
 
+function setpsdwindow(hObject, handles)
+set(handles.psd.windowh,'Checked','off');  % turn off the check on the current selection
+set(hObject,'checked','on');  % turn on the current checkmark
+handles.psd.windowh=hObject;  % update the selection handle
+guidata(hObject,handles);
+
 
 % --------------------------------------------------------------------
 function xpsdhann_Callback(hObject, ~, handles)
@@ -1867,20 +1866,14 @@ function xpsdhann_Callback(hObject, ~, handles)
 % handles    structure with handles and user data (see GUIDATA)
 
 handles.psd.window='Hanning';
-set(handles.psd.windowh,'Checked','off');  % turn off the check on the current selection
-set(hObject,'checked','on');  % turn on the current checkmark
-handles.psd.windowh=hObject;  % update the selection handle
-guidata(hObject,handles);
+setpsdwindow(hObject, handles)
 % --------------------------------------------------------------------
 function xpsdhamm_Callback(hObject, ~, handles)
 % hObject    handle to xpsdhamm (see GCBO)
 % eventdata  reserved - to be defined in a future version of MATLAB
 % handles    structure with handles and user data (see GUIDATA)
 handles.psd.window='Hamming';
-set(handles.psd.windowh,'Checked','off');  % turn off the check on the current selection
-set(hObject,'checked','on');  % turn on the current checkmark
-handles.psd.windowh=hObject;  % update the selection handle
-guidata(hObject,handles);
+setpsdwindow(hObject, handles)
 
 % --------------------------------------------------------------------
 function xpsdflat_Callback(hObject, ~, handles)
@@ -1888,9 +1881,12 @@ function xpsdflat_Callback(hObject, ~, handles)
 % eventdata  reserved - to be defined in a future version of MATLAB
 % handles    structure with handles and user data (see GUIDATA)
 handles.psd.window='Flattop';
-set(handles.psd.windowh,'Checked','off');  % turn off the check on the current selection
+setpsdwindow(hObject, handles)
+
+function setpsdoverlap(hObject,handles)
+set(handles.psd.overh,'Checked','off');  % turn off the check on the current selection
 set(hObject,'checked','on');  % turn on the current checkmark
-handles.psd.windowh=hObject;  % update the selection handle
+handles.psd.overh=hObject;  % update the selection handle
 guidata(hObject,handles);
 
 % --------------------------------------------------------------------
@@ -1899,10 +1895,7 @@ function xpsdover0_Callback(hObject, ~, handles)
 % eventdata  reserved - to be defined in a future version of MATLAB
 % handles    structure with handles and user data (see GUIDATA)
 handles.psd.overlap=0;  % set overlap to 0%
-set(handles.psd.overh,'Checked','off');  % turn off the check on the current selection
-set(hObject,'checked','on');  % turn on the current checkmark
-handles.psd.overh=hObject;  % update the selection handle
-guidata(hObject,handles);
+setpsdoverlap(hObject,handles)
 
 % --------------------------------------------------------------------
 function xpsdover25_Callback(hObject, ~, handles)
@@ -1910,21 +1903,16 @@ function xpsdover25_Callback(hObject, ~, handles)
 % eventdata  reserved - to be defined in a future version of MATLAB
 % handles    structure with handles and user data (see GUIDATA)
 handles.psd.overlap=0.25;  % set overlap to 25%
-set(handles.psd.overh,'Checked','off');  % turn off the check on the current selection
-set(hObject,'checked','on');  % turn on the current checkmark
-handles.psd.overh=hObject;  % update the selection handle
-guidata(hObject,handles);
+setpsdoverlap(hObject,handles)
+
 
 % --------------------------------------------------------------------
 function xpsdover50_Callback(hObject, ~, handles)
 % hObject    handle to xpsdover50 (see GCBO)
 % eventdata  reserved - to be defined in a future version of MATLAB
 % handles    structure with handles and user data (see GUIDATA)
-handles.psd.overlap=0.55;  % set overlap to 50%
-set(handles.psd.overh,'Checked','off');  % turn off the check on the current selection
-set(hObject,'checked','on');  % turn on the current checkmark
-handles.psd.overh=hObject;  % update the selection handle
-guidata(hObject,handles);
+handles.psd.overlap=0.50;  % set overlap to 50%
+setpsdoverlap(hObject,handles)
 
 % --------------------------------------------------------------------
 function xpsdover75_Callback(hObject, ~, handles)
@@ -1932,10 +1920,7 @@ function xpsdover75_Callback(hObject, ~, handles)
 % eventdata  reserved - to be defined in a future version of MATLAB
 % handles    structure with handles and user data (see GUIDATA)
 handles.psd.overlap=0.75;  % set overlap to 75%
-set(handles.psd.overh,'Checked','off');  % turn off the check on the current selection
-set(hObject,'checked','on');  % turn on the current checkmark
-handles.psd.overh=hObject;  % update the selection handle
-guidata(hObject,handles);
+setpsdoverlap(hObject,handles)
 
 % --------------------------------------------------------------------
 function xpsdover90_Callback(hObject, ~, handles)
@@ -1943,10 +1928,7 @@ function xpsdover90_Callback(hObject, ~, handles)
 % eventdata  reserved - to be defined in a future version of MATLAB
 % handles    structure with handles and user data (see GUIDATA)
 handles.psd.overlap=0.9;  % set overlap to 90%
-set(handles.psd.overh,'Checked','off');  % turn off the check on the current selection
-set(hObject,'checked','on');  % turn on the current checkmark
-handles.psd.overh=hObject;  % update the selection handle
-guidata(hObject,handles);
+setpsdoverlap(hObject,handles)
 
 % --------------------------------------------------------------------
 function xload_settings_Callback(~, ~, ~)
@@ -1982,6 +1964,11 @@ function xdtmnu_Callback(~, ~, ~)
 % eventdata  reserved - to be defined in a future version of MATLAB
 % handles    structure with handles and user data (see GUIDATA)
 
+function setspecdt(hObject, handles)
+set(handles.spec.dth,'Checked','off');  % turn off the check on the current selection
+set(hObject,'checked','on');  % turn on the current checkmark
+handles.spec.dth=hObject;  % update the selection handle
+guidata(hObject,handles);
 
 % --------------------------------------------------------------------
 function xspecdt100m_Callback(hObject, ~, handles)
@@ -1989,10 +1976,8 @@ function xspecdt100m_Callback(hObject, ~, handles)
 % eventdata  reserved - to be defined in a future version of MATLAB
 % handles    structure with handles and user data (see GUIDATA)
 handles.spec.dt=0.1;
-set(handles.spec.dth,'Checked','off');  % turn off the check on the current selection
-set(hObject,'checked','on');  % turn on the current checkmark
-handles.spec.dth=hObject;  % update the selection handle
-guidata(hObject,handles);
+setspecdt(hObject, handles)
+
 
 % --------------------------------------------------------------------
 function xspecdt1s_Callback(hObject, ~, handles)
@@ -2000,10 +1985,7 @@ function xspecdt1s_Callback(hObject, ~, handles)
 % eventdata  reserved - to be defined in a future version of MATLAB
 % handles    structure with handles and user data (see GUIDATA)
 handles.spec.dt=1.0;
-set(handles.spec.dth,'Checked','off');  % turn off the check on the current selection
-set(hObject,'checked','on');  % turn on the current checkmark
-handles.spec.dth=hObject;  % update the selection handle
-guidata(hObject,handles);
+setspecdt(hObject, handles)
 
 % --------------------------------------------------------------------
 function xspecdt10s_Callback(hObject, ~, handles)
@@ -2011,10 +1993,7 @@ function xspecdt10s_Callback(hObject, ~, handles)
 % eventdata  reserved - to be defined in a future version of MATLAB
 % handles    structure with handles and user data (see GUIDATA)
 handles.spec.dt=10.0;
-set(handles.spec.dth,'Checked','off');  % turn off the check on the current selection
-set(hObject,'checked','on');  % turn on the current checkmark
-handles.spec.dth=hObject;  % update the selection handle
-guidata(hObject,handles);
+setspecdt(hObject, handles)
 
 % --------------------------------------------------------------------
 function xspec256_Callback(hObject, ~, handles)
@@ -2022,11 +2001,7 @@ function xspec256_Callback(hObject, ~, handles)
 % eventdata  reserved - to be defined in a future version of MATLAB
 % handles    structure with handles and user data (see GUIDATA)
 handles.spec.Nfft=256;
-set(handles.spec.Nffth,'Checked','off');  % turn off the check on the current selection
-set(hObject,'checked','on');  % turn on the current checkmark
-handles.spec.Nffth=hObject;  % update the selection handle
-guidata(hObject,handles);
-
+setspecdt(hObject, handles)
 % --------------------------------------------------------------------
 function xspec512_Callback(hObject, ~, handles)
 % hObject    handle to xspec512 (see GCBO)
@@ -2127,17 +2102,6 @@ function xspecplotscale_Callback(~, ~, ~)
 % handles    structure with handles and user data (see GUIDATA)
 
 
-% --------------------------------------------------------------------
-function xlpdt20ms_Callback(hObject, ~, handles)
-% hObject    handle to xlpdt20ms (see GCBO)
-% eventdata  reserved - to be defined in a future version of MATLAB
-% handles    structure with handles and user data (see GUIDATA)
-handles.lp.dt=0.02;
-set(handles.lp.dth,'Checked','off');  % turn off the check on the current selection
-set(hObject,'checked','on');  % turn on the current checkmark
-handles.lp.dth=hObject;  % update the selection handle
-% save out changed handles
-guidata(hObject,handles);
 
 
 % --------------------------------------------------------------------
@@ -2315,8 +2279,8 @@ function xabout_Callback(~, ~, ~)
 % hObject    handle to xabout (see GCBO)
 % eventdata  reserved - to be defined in a future version of MATLAB
 % handles    structure with handles and user data (see GUIDATA)
-message={'Virtual Sound Level Meter','Version 0.4.1','May 17, 2011', ...
-    'Copyright 2011 Ralph T Muehleisen','vslm.info@gmail.com'};
+message={'Virtual Sound Level Meter','Version 0.4.2','Apr 5, 2017', ...
+    'Copyright 2017 Ralph T Muehleisen','vslm.info@gmail.com'};
 msgbox(message,'About VSLM')
 
 
@@ -2511,5 +2475,19 @@ guidata(hObject,handles);
 % --------------------------------------------------------------------
 function xbandres_Callback(~, ~, ~)
 % hObject    handle to xbandres (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    structure with handles and user data (see GUIDATA)
+
+
+% --- Executes during object creation, after setting all properties.
+function figure1_CreateFcn(hObject, eventdata, handles)
+% hObject    handle to figure1 (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    empty - handles not created until after all CreateFcns called
+
+
+% --- Executes during object deletion, before destroying properties.
+function figure1_DeleteFcn(hObject, eventdata, handles)
+% hObject    handle to figure1 (see GCBO)
 % eventdata  reserved - to be defined in a future version of MATLAB
 % handles    structure with handles and user data (see GUIDATA)

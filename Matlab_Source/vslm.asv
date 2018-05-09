@@ -2007,7 +2007,11 @@ function xspec512_Callback(hObject, ~, handles)
 % hObject    handle to xspec512 (see GCBO)
 % eventdata  reserved - to be defined in a future version of MATLAB
 % handles    structure with handles and user data (see GUIDATA)
-setspecdt(hObject, handles)
+handles.spec.Nfft=512;
+set(handles.spec.Nffth,'Checked','off');  % turn off the check on the current selection
+set(hObject,'checked','on');  % turn on the current checkmark
+handles.spec.Nffth=hObject;  % update the selection handle
+guidata(hObject,handles);
 
 % --------------------------------------------------------------------
 function xspec1024_Callback(hObject, ~, handles)
@@ -2015,7 +2019,10 @@ function xspec1024_Callback(hObject, ~, handles)
 % eventdata  reserved - to be defined in a future version of MATLAB
 % handles    structure with handles and user data (see GUIDATA)
 handles.spec.Nfft=1024;
-setspecdt(hObject, handles)
+set(handles.spec.Nffth,'Checked','off');  % turn off the check on the current selection
+set(hObject,'checked','on');  % turn on the current checkmark
+handles.spec.Nffth=hObject;  % update the selection handle
+guidata(hObject,handles);
 
 % --------------------------------------------------------------------
 function xspec2048_Callback(hObject, ~, handles)
@@ -2023,7 +2030,10 @@ function xspec2048_Callback(hObject, ~, handles)
 % eventdata  reserved - to be defined in a future version of MATLAB
 % handles    structure with handles and user data (see GUIDATA)
 handles.spec.Nfft=2048;
-setspecdt(hObject, handles)
+set(handles.spec.Nffth,'Checked','off');  % turn off the check on the current selection
+set(hObject,'checked','on');  % turn on the current checkmark
+handles.spec.Nffth=hObject;  % update the selection handle
+guidata(hObject,handles);
 
 % --------------------------------------------------------------------
 function xspec128_Callback(hObject, ~, handles)
@@ -2042,7 +2052,10 @@ function xspec4096_Callback(hObject, ~, handles)
 % eventdata  reserved - to be defined in a future version of MATLAB
 % handles    structure with handles and user data (see GUIDATA)
 handles.spec.Nfft=4096;
-setspecdt(hObject, handles)
+set(handles.spec.Nffth,'Checked','off');  % turn off the check on the current selection
+set(hObject,'checked','on');  % turn on the current checkmark
+handles.spec.Nffth=hObject;  % update the selection handle
+guidata(hObject,handles);
 
 
 

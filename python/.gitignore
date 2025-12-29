@@ -1,0 +1,41 @@
+# --- Python Basics ---
+__pycache__/
+*.py[cod]
+*$py.class
+
+# --- Virtual Environments ---
+# It is best practice to keep envs outside the repo, 
+# but if created locally, ignore them:
+venv/
+.venv/
+env/
+.env
+
+# --- Distribution & Packaging (PyInstaller) ---
+# These folders are created when you run 'pyinstaller'
+build/
+dist/
+*.spec
+*.egg-info/
+.eggs/
+*.manifest
+
+# --- IDE Settings (VS Code, PyCharm, etc) ---
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# --- OS Generated Files ---
+.DS_Store
+Thumbs.db
+ehthumbs.db
+
+# --- Project Specific ---
+# Ignore large local measurements if you save them in the project folder
+# (Keep this commented out if you want to commit the test files in /tests)
+# *.wav
+# !tests/*.wav  # This would re-include wav files specifically in tests/
+
+# --- Temporary / Logs ---
+*.log

@@ -1,0 +1,1 @@
+conda create -n vslm_env -c conda-forge python=3.10 numpy scipy matplotlib pyqt6 pysoundfile python-sounddevice numba pyinstaller

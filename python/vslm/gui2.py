@@ -100,7 +100,15 @@ class MainWindow(QMainWindow):
         self.info_label.setFrameStyle(QFrame.Shape.StyledPanel | QFrame.Shadow.Sunken)
         self.info_label.setStyleSheet("background-color: #f0f0f0; padding: 5px;")
         
-        # --- Shared Stylesheet for Toggle Buttons ---
+        # --- 3. Weighting Group (UPDATED: Wide & Rounded) ---
+        wtg_group = QGroupBox("Frequency Weighting")
+        wtg_layout = QHBoxLayout() 
+        wtg_layout.setSpacing(10)  
+        self.wtg_bg = QButtonGroup(self)
+        
+        weighting_options = [("A", 1), ("C", 2), ("Flat (Z)", 3)]
+        
+        # Stylesheet for Rounded, Wide Buttons
         btn_style = """
             QPushButton {
                 border: 2px solid #aaa;
@@ -115,14 +123,6 @@ class MainWindow(QMainWindow):
                 border-color: #3b82f6;
             }
         """
-
-        # --- 3. Weighting Group (Updated Size: 50x30) ---
-        wtg_group = QGroupBox("Frequency Weighting")
-        wtg_layout = QHBoxLayout() 
-        wtg_layout.setSpacing(10)  
-        self.wtg_bg = QButtonGroup(self)
-        
-        weighting_options = [("A", 1), ("C", 2), ("Flat (Z)", 3)]
         
         for label_text, btn_id in weighting_options:
             pair_container = QWidget()
@@ -130,13 +130,15 @@ class MainWindow(QMainWindow):
             pair_layout.setContentsMargins(0, 5, 0, 5)
             pair_layout.setSpacing(4) 
             
+            # Label Above
             lbl = QLabel(label_text)
             lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
             lbl.setStyleSheet("font-weight: bold; color: #444; font-size: 11px;")
             
+            # Button Below (Wider & Rounded)
             btn = QPushButton("")
             btn.setCheckable(True)
-            btn.setFixedSize(50, 30)     # Updated to 50x30
+            btn.setFixedSize(50, 30)     # Width: 60px, Height: 20px
             btn.setCursor(Qt.CursorShape.PointingHandCursor)
             btn.setStyleSheet(btn_style)
             
@@ -147,49 +149,28 @@ class MainWindow(QMainWindow):
             
             pair_layout.addWidget(lbl)
             pair_layout.addWidget(btn, alignment=Qt.AlignmentFlag.AlignCenter)
+            
             wtg_layout.addWidget(pair_container)
             
         wtg_group.setLayout(wtg_layout)
         
-        # --- 4. Speed Group (Updated Layout & Size) ---
+        # 4. Speed Group
         spd_group = QGroupBox("Meter Speed")
-        spd_layout = QHBoxLayout() # Changed to Horizontal
-        spd_layout.setSpacing(10)
+        spd_layout = QVBoxLayout()
         self.spd_bg = QButtonGroup(self)
         
-        # Multi-line labels as requested
-        speed_options = [
-            ("Slow\n(1.0s)", 1),
-            ("Fast\n(125ms)", 2),
-            ("Impulse\n(35ms/1.5s)", 3)
-        ]
+        rb_slow = QRadioButton("Slow (1.0s)")
+        rb_fast = QRadioButton("Fast (125ms)")
+        rb_imp = QRadioButton("Impulse (35ms)")
+        rb_slow.setChecked(True)
         
-        for label_text, btn_id in speed_options:
-            pair_container = QWidget()
-            pair_layout = QVBoxLayout(pair_container)
-            pair_layout.setContentsMargins(0, 5, 0, 5)
-            pair_layout.setSpacing(4)
-            
-            lbl = QLabel(label_text)
-            lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            # Use same font style
-            lbl.setStyleSheet("font-weight: bold; color: #444; font-size: 11px;")
-            
-            btn = QPushButton("")
-            btn.setCheckable(True)
-            btn.setFixedSize(50, 30) # Match Weighting Size
-            btn.setCursor(Qt.CursorShape.PointingHandCursor)
-            btn.setStyleSheet(btn_style)
-            
-            if btn_id == 1: 
-                btn.setChecked(True)
-            
-            self.spd_bg.addButton(btn, btn_id)
-            
-            pair_layout.addWidget(lbl)
-            pair_layout.addWidget(btn, alignment=Qt.AlignmentFlag.AlignCenter)
-            spd_layout.addWidget(pair_container)
-            
+        self.spd_bg.addButton(rb_slow, 1)
+        self.spd_bg.addButton(rb_fast, 2)
+        self.spd_bg.addButton(rb_imp, 3)
+        
+        spd_layout.addWidget(rb_slow)
+        spd_layout.addWidget(rb_fast)
+        spd_layout.addWidget(rb_imp)
         spd_group.setLayout(spd_layout)
         
         # 5. Analysis Mode Group

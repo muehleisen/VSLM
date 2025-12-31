@@ -1,15 +1,16 @@
 # vslm/gui.py
 import sys
 import os
-import inspect 
+import inspect # Used to check if function accepts progress_callback
 import numpy as np
-from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, 
+from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, 
                              QHBoxLayout, QPushButton, QLabel, QGroupBox, 
                              QRadioButton, QButtonGroup, QFileDialog, QMessageBox,
-                             QFrame, QProgressBar)
-from PyQt6.QtCore import Qt, QThread, pyqtSignal
+                             QFrame, QProgressBar, QInputDialog) 
+from PySide6.QtCore import Qt, QThread, Signal
 
 # Matplotlib Integration
+# backend_qtagg works for both PyQt6 and PySide6, effectively wrapping the widget
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.backends.backend_qtagg import NavigationToolbar2QT as NavigationToolbar
 from matplotlib.figure import Figure
@@ -24,9 +25,10 @@ class AnalysisWorker(QThread):
     Runs analysis tasks in the background.
     Supports progress updates.
     """
-    result_ready = pyqtSignal(object)
-    error_occurred = pyqtSignal(str)
-    progress_updated = pyqtSignal(int)
+    # PySide6 uses Signal instead of pyqtSignal
+    result_ready = Signal(object)
+    error_occurred = Signal(str)
+    progress_updated = Signal(int) # Signal to update GUI bar
 
     def __init__(self, function, *args, **kwargs):
         super().__init__()
@@ -39,6 +41,7 @@ class AnalysisWorker(QThread):
             # Check if the target function accepts 'progress_callback'
             sig = inspect.signature(self.function)
             if 'progress_callback' in sig.parameters:
+                # Inject our emission method as the callback
                 self.kwargs['progress_callback'] = self.emit_progress
             
             result = self.function(*self.args, **self.kwargs)
@@ -54,7 +57,7 @@ class MainWindow(QMainWindow):
         super().__init__()
         
         self.setWindowTitle("VSLM - Virtual Sound Level Meter (Python Port)")
-        self.resize(1050, 700)
+        self.resize(1050, 700) # Slightly wider for better spacing
         
         # Initialize Core Engines
         self.core = VSLMCore()
@@ -100,96 +103,42 @@ class MainWindow(QMainWindow):
         self.info_label.setFrameStyle(QFrame.Shape.StyledPanel | QFrame.Shadow.Sunken)
         self.info_label.setStyleSheet("background-color: #f0f0f0; padding: 5px;")
         
-        # --- Shared Stylesheet for Toggle Buttons ---
-        btn_style = """
-            QPushButton {
-                border: 2px solid #aaa;
-                border-radius: 8px; /* Rounded Corners */
-                background-color: #f5f5f5;
-            }
-            QPushButton:checked {
-                background-color: #3b82f6; /* Blue when active */
-                border-color: #1d4ed8;
-            }
-            QPushButton:hover {
-                border-color: #3b82f6;
-            }
-        """
-
-        # --- 3. Weighting Group (Updated Size: 50x30) ---
+        # 3. Weighting Group
         wtg_group = QGroupBox("Frequency Weighting")
-        wtg_layout = QHBoxLayout() 
-        wtg_layout.setSpacing(10)  
+        wtg_layout = QVBoxLayout()
         self.wtg_bg = QButtonGroup(self)
         
-        weighting_options = [("A", 1), ("C", 2), ("Flat (Z)", 3)]
+        rb_a = QRadioButton("A-Weighting")
+        rb_c = QRadioButton("C-Weighting")
+        rb_z = QRadioButton("Flat (Z)")
+        rb_a.setChecked(True)
         
-        for label_text, btn_id in weighting_options:
-            pair_container = QWidget()
-            pair_layout = QVBoxLayout(pair_container)
-            pair_layout.setContentsMargins(0, 5, 0, 5)
-            pair_layout.setSpacing(4) 
-            
-            lbl = QLabel(label_text)
-            lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            lbl.setStyleSheet("font-weight: bold; color: #444; font-size: 11px;")
-            
-            btn = QPushButton("")
-            btn.setCheckable(True)
-            btn.setFixedSize(50, 30)     # Updated to 50x30
-            btn.setCursor(Qt.CursorShape.PointingHandCursor)
-            btn.setStyleSheet(btn_style)
-            
-            if btn_id == 1: 
-                btn.setChecked(True)
-            
-            self.wtg_bg.addButton(btn, btn_id)
-            
-            pair_layout.addWidget(lbl)
-            pair_layout.addWidget(btn, alignment=Qt.AlignmentFlag.AlignCenter)
-            wtg_layout.addWidget(pair_container)
-            
+        self.wtg_bg.addButton(rb_a, 1)
+        self.wtg_bg.addButton(rb_c, 2)
+        self.wtg_bg.addButton(rb_z, 3)
+        
+        wtg_layout.addWidget(rb_a)
+        wtg_layout.addWidget(rb_c)
+        wtg_layout.addWidget(rb_z)
         wtg_group.setLayout(wtg_layout)
         
-        # --- 4. Speed Group (Updated Layout & Size) ---
+        # 4. Speed Group
         spd_group = QGroupBox("Meter Speed")
-        spd_layout = QHBoxLayout() # Changed to Horizontal
-        spd_layout.setSpacing(10)
+        spd_layout = QVBoxLayout()
         self.spd_bg = QButtonGroup(self)
         
-        # Multi-line labels as requested
-        speed_options = [
-            ("Slow\n(1.0s)", 1),
-            ("Fast\n(125ms)", 2),
-            ("Impulse\n(35ms/1.5s)", 3)
-        ]
+        rb_slow = QRadioButton("Slow (1.0s)")
+        rb_fast = QRadioButton("Fast (125ms)")
+        rb_imp = QRadioButton("Impulse (35ms)")
+        rb_slow.setChecked(True)
         
-        for label_text, btn_id in speed_options:
-            pair_container = QWidget()
-            pair_layout = QVBoxLayout(pair_container)
-            pair_layout.setContentsMargins(0, 5, 0, 5)
-            pair_layout.setSpacing(4)
-            
-            lbl = QLabel(label_text)
-            lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            # Use same font style
-            lbl.setStyleSheet("font-weight: bold; color: #444; font-size: 11px;")
-            
-            btn = QPushButton("")
-            btn.setCheckable(True)
-            btn.setFixedSize(50, 30) # Match Weighting Size
-            btn.setCursor(Qt.CursorShape.PointingHandCursor)
-            btn.setStyleSheet(btn_style)
-            
-            if btn_id == 1: 
-                btn.setChecked(True)
-            
-            self.spd_bg.addButton(btn, btn_id)
-            
-            pair_layout.addWidget(lbl)
-            pair_layout.addWidget(btn, alignment=Qt.AlignmentFlag.AlignCenter)
-            spd_layout.addWidget(pair_container)
-            
+        self.spd_bg.addButton(rb_slow, 1)
+        self.spd_bg.addButton(rb_fast, 2)
+        self.spd_bg.addButton(rb_imp, 3)
+        
+        spd_layout.addWidget(rb_slow)
+        spd_layout.addWidget(rb_fast)
+        spd_layout.addWidget(rb_imp)
         spd_group.setLayout(spd_layout)
         
         # 5. Analysis Mode Group
@@ -215,13 +164,13 @@ class MainWindow(QMainWindow):
             
         mode_group.setLayout(mode_layout)
         
-        # --- Progress Bar ---
+        # --- NEW: Progress Bar ---
         self.progress_bar = QProgressBar()
         self.progress_bar.setRange(0, 100)
         self.progress_bar.setValue(0)
-        self.progress_bar.setTextVisible(False)
+        self.progress_bar.setTextVisible(False) # Clean look
         self.progress_bar.setStyleSheet("QProgressBar { height: 10px; border: 1px solid grey; border-radius: 2px; } QProgressBar::chunk { background-color: #3b82f6; }")
-        self.progress_bar.setVisible(False)
+        self.progress_bar.setVisible(False) # Hide until needed
         
         # 6. Analyze Button
         self.btn_analyze = QPushButton("ANALYZE")
@@ -236,7 +185,7 @@ class MainWindow(QMainWindow):
         layout.addWidget(spd_group)
         layout.addWidget(mode_group)
         layout.addStretch() 
-        layout.addWidget(self.progress_bar)
+        layout.addWidget(self.progress_bar) # Add bar above button
         layout.addWidget(self.btn_analyze)
         
         self.main_layout.addWidget(panel)
@@ -286,7 +235,7 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "Warning", "Please load a measurement file first.")
             return
             
-        from PyQt6.QtWidgets import QInputDialog
+        # QInputDialog is imported from PySide6.QtWidgets
         db_val, ok = QInputDialog.getDouble(self, "Calibration", 
                                           "Enter Calibrator Level (dB):", 94.0, 0, 150, 1)
         if ok:

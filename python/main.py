@@ -1,18 +1,17 @@
-# main.py
 import sys
-from PyQt6.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication
 from vslm.gui import MainWindow
 
 def main():
-    # Create the Application
+    # Initialize the Application
     app = QApplication(sys.argv)
-    app.setApplicationName("VSLM Python")
-
-    # Create and Show the Window
+    app.setStyle('Fusion') # Optional: Fusion style looks good on all platforms
+    
+    # Create and Show the Main Window
     window = MainWindow()
     window.show()
-
-    # Run the Event Loop
+    
+    # Start the Event Loop
     sys.exit(app.exec())
 
 if __name__ == "__main__":

@@ -3,11 +3,11 @@ import sys
 import os
 import inspect 
 import numpy as np
-from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, 
+from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, 
                              QHBoxLayout, QPushButton, QLabel, QGroupBox, 
                              QRadioButton, QButtonGroup, QFileDialog, QMessageBox,
-                             QFrame, QProgressBar)
-from PyQt6.QtCore import Qt, QThread, pyqtSignal
+                             QFrame, QProgressBar, QInputDialog) 
+from PySide6.QtCore import Qt, QThread, Signal
 
 # Matplotlib Integration
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
@@ -24,9 +24,10 @@ class AnalysisWorker(QThread):
     Runs analysis tasks in the background.
     Supports progress updates.
     """
-    result_ready = pyqtSignal(object)
-    error_occurred = pyqtSignal(str)
-    progress_updated = pyqtSignal(int)
+    # PySide6 uses Signal instead of pyqtSignal
+    result_ready = Signal(object)
+    error_occurred = Signal(str)
+    progress_updated = Signal(int)
 
     def __init__(self, function, *args, **kwargs):
         super().__init__()
@@ -116,7 +117,7 @@ class MainWindow(QMainWindow):
             }
         """
 
-        # --- 3. Weighting Group (Updated Size: 50x30) ---
+        # --- 3. Weighting Group (Wide & Rounded) ---
         wtg_group = QGroupBox("Frequency Weighting")
         wtg_layout = QHBoxLayout() 
         wtg_layout.setSpacing(10)  
@@ -134,9 +135,10 @@ class MainWindow(QMainWindow):
             lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
             lbl.setStyleSheet("font-weight: bold; color: #444; font-size: 11px;")
             
+            # Rectangular Button logic applied to PySide6
             btn = QPushButton("")
             btn.setCheckable(True)
-            btn.setFixedSize(50, 30)     # Updated to 50x30
+            btn.setFixedSize(50, 30)     # 50x30 Size
             btn.setCursor(Qt.CursorShape.PointingHandCursor)
             btn.setStyleSheet(btn_style)
             
@@ -151,13 +153,12 @@ class MainWindow(QMainWindow):
             
         wtg_group.setLayout(wtg_layout)
         
-        # --- 4. Speed Group (Updated Layout & Size) ---
+        # --- 4. Speed Group (Horizontal, Multi-line Labels) ---
         spd_group = QGroupBox("Meter Speed")
-        spd_layout = QHBoxLayout() # Changed to Horizontal
+        spd_layout = QHBoxLayout() 
         spd_layout.setSpacing(10)
         self.spd_bg = QButtonGroup(self)
         
-        # Multi-line labels as requested
         speed_options = [
             ("Slow\n(1.0s)", 1),
             ("Fast\n(125ms)", 2),
@@ -172,7 +173,6 @@ class MainWindow(QMainWindow):
             
             lbl = QLabel(label_text)
             lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            # Use same font style
             lbl.setStyleSheet("font-weight: bold; color: #444; font-size: 11px;")
             
             btn = QPushButton("")
@@ -286,7 +286,6 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "Warning", "Please load a measurement file first.")
             return
             
-        from PyQt6.QtWidgets import QInputDialog
         db_val, ok = QInputDialog.getDouble(self, "Calibration", 
                                           "Enter Calibrator Level (dB):", 94.0, 0, 150, 1)
         if ok:

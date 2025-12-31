@@ -1,46 +1,28 @@
 # vslm/gui.py
 import sys
 import os
-import inspect
-from typing import Tuple, List, Optional, Any
+from typing import Tuple, Any, Dict
 
 import numpy as np
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, 
-    QPushButton, QLabel, QGroupBox, QRadioButton, QButtonGroup, 
-    QFileDialog, QMessageBox, QFrame, QProgressBar, QInputDialog, 
-    QSizePolicy, QLayout
+    QPushButton, QLabel, QGroupBox, QButtonGroup, 
+    QFileDialog, QMessageBox, QFrame, QProgressBar
 )
-from PySide6.QtCore import Qt, QThread, Signal, QSize
-
-# Matplotlib Integration
-from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
-from matplotlib.backends.backend_qtagg import NavigationToolbar2QT as NavigationToolbar
-from matplotlib.figure import Figure
+from PySide6.QtCore import Qt
+from PySide6.QtGui import QAction
 
 # Backend Imports
 from .core import VSLMCore
 from .playback import AudioPlayer
 from . import analysis
 
-# --- Constants & Styles ---
+# Refactored Modules
+from . import dialogs
+from . import widgets
+from . import workers
 
-BTN_SIZE = QSize(50, 30)
-
-STYLE_TOGGLE_BTN = """
-    QPushButton {
-        border: 2px solid #aaa;
-        border-radius: 8px;
-        background-color: #f5f5f5;
-    }
-    QPushButton:checked {
-        background-color: #3b82f6;
-        border-color: #1d4ed8;
-    }
-    QPushButton:hover {
-        border-color: #3b82f6;
-    }
-"""
+# --- Constants ---
 
 STYLE_INFO_LABEL = """
     QLabel {
@@ -69,37 +51,6 @@ STYLE_PROGRESS_BAR = """
     }
 """
 
-
-class AnalysisWorker(QThread):
-    """
-    Executes analysis functions in a background thread to keep the GUI responsive.
-    """
-    result_ready = Signal(object)
-    error_occurred = Signal(str)
-    progress_updated = Signal(int)
-
-    def __init__(self, function: Any, *args: Any, **kwargs: Any) -> None:
-        super().__init__()
-        self.function = function
-        self.args = args
-        self.kwargs = kwargs
-
-    def run(self) -> None:
-        try:
-            # Inspect function to see if it accepts a progress callback
-            sig = inspect.signature(self.function)
-            if 'progress_callback' in sig.parameters:
-                self.kwargs['progress_callback'] = self.emit_progress
-            
-            result = self.function(*self.args, **self.kwargs)
-            self.result_ready.emit(result)
-        except Exception as e:
-            self.error_occurred.emit(str(e))
-
-    def emit_progress(self, value: int) -> None:
-        self.progress_updated.emit(value)
-
-
 class MainWindow(QMainWindow):
     def __init__(self) -> None:
         super().__init__()
@@ -110,14 +61,36 @@ class MainWindow(QMainWindow):
         # Initialize Backend
         self.core = VSLMCore()
         self.player = AudioPlayer()
-        self.worker: Optional[AnalysisWorker] = None 
+        self.worker = None 
         
+        # Application State
+        self.settings: Dict[str, Any] = {
+            'plot_spacing': 1.0,
+            'lpplot_scales': (30, 120),
+            'leq_int': 1.0,
+            'leq_perc': 90,
+            'leq_scales': (30, 120),
+            'dose_crit': (3, 80, 90),
+            'band_res_idx': 0,
+            'band_method_idx': 0,
+            'psd_fft': 4096,
+            'psd_overlap': 50,
+            'psd_win': "Hann",
+            # Spectrogram Settings
+            'spec_fft': 4096,
+            'spec_slice': 0.1,  # Default 100ms slice
+            'spec_scale_min': 30,
+            'spec_scale_max': 120,
+            'spec_cmap': "inferno",
+            'spec_3d': False
+        }
+
         # Main UI Container
         self.central_widget = QWidget()
         self.setCentralWidget(self.central_widget)
         self.main_layout = QHBoxLayout(self.central_widget)
         
-        # UI Elements (initialized in create methods)
+        # UI Elements
         self.info_label: QLabel
         self.btn_analyze: QPushButton
         self.btn_play: QPushButton
@@ -125,7 +98,9 @@ class MainWindow(QMainWindow):
         self.spd_bg: QButtonGroup
         self.mode_bg: QButtonGroup
         self.progress_bar: QProgressBar
+        self.plot_widget: widgets.VSLMPlotWidget
         
+        self._create_menubar()
         self._create_left_panel()
         self._create_right_panel()
         
@@ -134,8 +109,89 @@ class MainWindow(QMainWindow):
 
     # --- UI Construction ---
 
+    def _create_menubar(self) -> None:
+        menubar = self.menuBar()
+
+        # File Menu
+        file_menu = menubar.addMenu("File")
+        act_load_settings = QAction("Load Settings", self)
+        act_load_settings.triggered.connect(lambda: self._placeholder_action("Load Settings"))
+        file_menu.addAction(act_load_settings)
+        act_save_settings = QAction("Save Settings", self)
+        act_save_settings.triggered.connect(lambda: self._placeholder_action("Save Settings"))
+        file_menu.addAction(act_save_settings)
+        file_menu.addSeparator()
+        act_quit = QAction("Quit", self)
+        act_quit.triggered.connect(self.confirm_quit) 
+        file_menu.addAction(act_quit)
+
+        # Lpplot Menu
+        lpplot_menu = menubar.addMenu("Lpplot")
+        act_plot_spacing = QAction("Set Plot Time Spacing", self)
+        act_plot_spacing.triggered.connect(self.dlg_plot_spacing)
+        lpplot_menu.addAction(act_plot_spacing)
+        act_plot_scales = QAction("Plot Scales", self)
+        act_plot_scales.triggered.connect(self.dlg_lpplot_scales)
+        lpplot_menu.addAction(act_plot_scales)
+
+        # Leq Menu
+        leq_menu = menubar.addMenu("Leq")
+        act_leq_int = QAction("LEQ Integration Time", self)
+        act_leq_int.triggered.connect(self.dlg_leq_integration)
+        leq_menu.addAction(act_leq_int)
+        act_leq_perc = QAction("Set LEQ Percentile", self)
+        act_leq_perc.triggered.connect(self.dlg_leq_percentile)
+        leq_menu.addAction(act_leq_perc)
+        act_leq_scales = QAction("Plot Scales", self)
+        act_leq_scales.triggered.connect(self.dlg_leq_scales)
+        leq_menu.addAction(act_leq_scales)
+        act_leq_dose = QAction("Noise Dose Criterion", self)
+        act_leq_dose.triggered.connect(self.dlg_noise_dose)
+        leq_menu.addAction(act_leq_dose)
+
+        # Band Menu
+        band_menu = menubar.addMenu("Band")
+        act_resolution = QAction("Resolution", self)
+        act_resolution.triggered.connect(self.dlg_band_resolution)
+        band_menu.addAction(act_resolution)
+        act_method = QAction("Method", self)
+        act_method.triggered.connect(self.dlg_band_method)
+        band_menu.addAction(act_method)
+
+        # PSD Menu
+        psd_menu = menubar.addMenu("PSD")
+        act_psd_fft = QAction("FFT Size", self)
+        act_psd_fft.triggered.connect(self.dlg_psd_fft)
+        psd_menu.addAction(act_psd_fft)
+        act_psd_overlap = QAction("Overlap", self)
+        act_psd_overlap.triggered.connect(self.dlg_psd_overlap)
+        psd_menu.addAction(act_psd_overlap)
+        act_psd_window = QAction("Window", self)
+        act_psd_window.triggered.connect(self.dlg_psd_window)
+        psd_menu.addAction(act_psd_window)
+
+        # Spectrogram Menu
+        spec_menu = menubar.addMenu("Spectrogram")
+        act_spec_fft = QAction("FFT Size", self)
+        act_spec_fft.triggered.connect(self.dlg_spec_fft)
+        spec_menu.addAction(act_spec_fft)
+        act_spec_slice = QAction("Slice Length", self)
+        act_spec_slice.triggered.connect(self.dlg_spec_slice)
+        spec_menu.addAction(act_spec_slice)
+        act_spec_scale = QAction("Plot Scale", self)
+        act_spec_scale.triggered.connect(self.dlg_spec_scales)
+        spec_menu.addAction(act_spec_scale)
+        act_spec_view = QAction("View", self)
+        act_spec_view.triggered.connect(self.dlg_spec_view)
+        spec_menu.addAction(act_spec_view)
+
+        # Help Menu
+        help_menu = menubar.addMenu("Help")
+        act_about = QAction("About VSLM", self)
+        act_about.triggered.connect(lambda: dialogs.AboutDialog.show(self))
+        help_menu.addAction(act_about)
+
     def _create_left_panel(self) -> None:
-        """Constructs the left-hand settings sidebar."""
         panel = QWidget()
         panel.setFixedWidth(280)
         layout = QVBoxLayout(panel)
@@ -153,21 +209,17 @@ class MainWindow(QMainWindow):
         self.main_layout.addWidget(panel)
 
     def _create_right_panel(self) -> None:
-        """Constructs the right-hand plotting area."""
         right_widget = QWidget()
         layout = QVBoxLayout(right_widget)
         
-        self.figure = Figure(figsize=(5, 4), dpi=100)
-        self.canvas = FigureCanvas(self.figure)
-        self.ax = self.figure.add_subplot(111)
-        self.ax.text(0.5, 0.5, "Load a file to begin", ha='center', va='center')
-        self.ax.axis('off')
+        self.plot_widget = widgets.VSLMPlotWidget()
+        self.plot_widget.show_placeholder()
         
-        self.toolbar = NavigationToolbar(self.canvas, self)
+        self.figure = self.plot_widget.figure
+        self.canvas = self.plot_widget.canvas
+        self.ax = self.plot_widget.ax
         
-        layout.addWidget(self.toolbar)
-        layout.addWidget(self.canvas)
-        
+        layout.addWidget(self.plot_widget)
         self.main_layout.addWidget(right_widget, stretch=1)
 
     # --- Group Creators ---
@@ -180,7 +232,7 @@ class MainWindow(QMainWindow):
         btn_load.clicked.connect(self.load_measurement)
         
         btn_cal = QPushButton("Set Calibration")
-        btn_cal.clicked.connect(self.set_calibration)
+        btn_cal.clicked.connect(self.dlg_calibration)
         
         self.btn_play = QPushButton("Play Audio")
         self.btn_play.clicked.connect(self.toggle_playback)
@@ -202,14 +254,12 @@ class MainWindow(QMainWindow):
         group = QGroupBox("Frequency Weighting")
         layout = QHBoxLayout()
         layout.setSpacing(10)
-        
         self.wtg_bg = QButtonGroup(self)
         options = [("A", 1), ("C", 2), ("Flat (Z)", 3)]
-        
         for text, uid in options:
-            pair = self._create_vertical_pair(text, uid, self.wtg_bg)
+            pair = widgets.LabelledToggleButton(text, uid, self.wtg_bg)
+            if uid == 1: pair.setChecked(True)
             layout.addWidget(pair)
-            
         group.setLayout(layout)
         return group
 
@@ -217,18 +267,12 @@ class MainWindow(QMainWindow):
         group = QGroupBox("Meter Speed")
         layout = QHBoxLayout()
         layout.setSpacing(10)
-        
         self.spd_bg = QButtonGroup(self)
-        options = [
-            ("Slow\n(1.0s)", 1), 
-            ("Fast\n(125ms)", 2), 
-            ("Impulse\n(35ms/1.5s)", 3)
-        ]
-        
+        options = [("Slow\n(1.0s)", 1), ("Fast\n(125ms)", 2), ("Impulse\n(35ms/1.5s)", 3)]
         for text, uid in options:
-            pair = self._create_vertical_pair(text, uid, self.spd_bg)
+            pair = widgets.LabelledToggleButton(text, uid, self.spd_bg)
+            if uid == 1: pair.setChecked(True)
             layout.addWidget(pair)
-            
         group.setLayout(layout)
         return group
 
@@ -236,7 +280,6 @@ class MainWindow(QMainWindow):
         group = QGroupBox("Analysis Mode")
         layout = QVBoxLayout()
         self.mode_bg = QButtonGroup(self)
-        
         modes = [
             ("Sound Level (Lp)", "lp"),
             ("Leq / Dose", "leq"),
@@ -245,14 +288,13 @@ class MainWindow(QMainWindow):
             ("PSD", "psd"),
             ("Spectrogram", "spec")
         ]
-        
         for i, (name, tag) in enumerate(modes):
+            from PySide6.QtWidgets import QRadioButton
             rb = QRadioButton(name)
             rb.setProperty("tag", tag)
             if i == 0: rb.setChecked(True)
             self.mode_bg.addButton(rb, i)
             layout.addWidget(rb)
-            
         group.setLayout(layout)
         return group
 
@@ -273,34 +315,96 @@ class MainWindow(QMainWindow):
         self.btn_analyze.setEnabled(False)
         return self.btn_analyze
 
-    def _create_vertical_pair(self, text: str, btn_id: int, 
-                              group: QButtonGroup) -> QWidget:
-        """Helper to create a 'Label above Button' widget pair."""
-        container = QWidget()
-        layout = QVBoxLayout(container)
-        layout.setContentsMargins(0, 5, 0, 5)
-        layout.setSpacing(4)
-        
-        lbl = QLabel(text)
-        lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        lbl.setStyleSheet("font-weight: bold; color: #444; font-size: 11px;")
-        
-        btn = QPushButton("")
-        btn.setCheckable(True)
-        btn.setFixedSize(BTN_SIZE)
-        btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        btn.setStyleSheet(STYLE_TOGGLE_BTN)
-        
-        if btn_id == 1:
-            btn.setChecked(True)
-            
-        group.addButton(btn, btn_id)
-        
-        layout.addWidget(lbl)
-        layout.addWidget(btn, alignment=Qt.AlignmentFlag.AlignCenter)
-        return container
+    # --- Slots ---
 
-    # --- Logic ---
+    def dlg_calibration(self):
+        if self.core.audio_data is None:
+            QMessageBox.warning(self, "Warning", "Please load a measurement file first.")
+            return
+        dlg = dialogs.CalibrationDialog(current_val=94.0, parent=self)
+        if dlg.exec():
+            try:
+                factor = self.core.set_calibration(dlg.get_value())
+                self._update_info_text()
+                QMessageBox.information(self, "Calibration", f"Factor set to {factor:.4f}")
+            except Exception as e:
+                QMessageBox.critical(self, "Error", str(e))
+
+    def dlg_plot_spacing(self):
+        dlg = dialogs.PlotTimeSpacingDialog(self.settings['plot_spacing'], self)
+        if dlg.exec(): self.settings['plot_spacing'] = dlg.get_value()
+
+    def dlg_lpplot_scales(self):
+        cmin, cmax = self.settings['lpplot_scales']
+        dlg = dialogs.PlotScalesDialog(cmin, cmax, self)
+        if dlg.exec(): self.settings['lpplot_scales'] = dlg.get_values()
+
+    def dlg_leq_integration(self):
+        dlg = dialogs.LeqIntegrationDialog(self.settings['leq_int'], self)
+        if dlg.exec(): self.settings['leq_int'] = dlg.get_value()
+
+    def dlg_leq_percentile(self):
+        dlg = dialogs.LeqPercentileDialog(self.settings['leq_perc'], self)
+        if dlg.exec(): self.settings['leq_perc'] = dlg.get_value()
+
+    def dlg_leq_scales(self):
+        cmin, cmax = self.settings['leq_scales']
+        dlg = dialogs.PlotScalesDialog(cmin, cmax, self)
+        if dlg.exec(): self.settings['leq_scales'] = dlg.get_values()
+
+    def dlg_noise_dose(self):
+        e, t, c = self.settings['dose_crit']
+        dlg = dialogs.NoiseDoseDialog(e, t, c, self)
+        if dlg.exec(): self.settings['dose_crit'] = dlg.get_values()
+
+    def dlg_band_resolution(self):
+        dlg = dialogs.BandResolutionDialog(self.settings['band_res_idx'], self)
+        if dlg.exec(): pass
+
+    def dlg_band_method(self):
+        dlg = dialogs.BandMethodDialog(self.settings['band_method_idx'], self)
+        if dlg.exec(): pass
+
+    def dlg_psd_fft(self):
+        dlg = dialogs.FFTSizeDialog(self.settings['psd_fft'], self)
+        if dlg.exec(): self.settings['psd_fft'] = dlg.get_value()
+
+    def dlg_psd_overlap(self):
+        dlg = dialogs.OverlapDialog(self.settings['psd_overlap'], self)
+        if dlg.exec(): self.settings['psd_overlap'] = dlg.get_value()
+
+    def dlg_psd_window(self):
+        dlg = dialogs.WindowDialog(self.settings['psd_win'], self)
+        if dlg.exec(): self.settings['psd_win'] = dlg.get_value()
+
+    def dlg_spec_fft(self):
+        dlg = dialogs.FFTSizeDialog(self.settings['spec_fft'], self)
+        if dlg.exec(): self.settings['spec_fft'] = dlg.get_value()
+
+    def dlg_spec_slice(self):
+        dlg = dialogs.SliceLengthDialog(self.settings['spec_slice'], self)
+        if dlg.exec(): self.settings['spec_slice'] = dlg.get_value()
+
+    def dlg_spec_scales(self):
+        cmin, cmax = self.settings['spec_scale_min'], self.settings['spec_scale_max']
+        dlg = dialogs.PlotScalesDialog(cmin, cmax, self)
+        if dlg.exec(): 
+            self.settings['spec_scale_min'], self.settings['spec_scale_max'] = dlg.get_values()
+
+    def dlg_spec_view(self):
+        c, v = self.settings['spec_cmap'], self.settings['spec_3d']
+        dlg = dialogs.SpectrogramViewDialog(c, v, self)
+        if dlg.exec(): self.settings['spec_cmap'], self.settings['spec_3d'] = dlg.get_values()
+
+    # --- Main Logic ---
+
+    def _placeholder_action(self, name: str) -> None:
+        self.status_bar.showMessage(f"Menu action '{name}' triggered (Not implemented).")
+
+    def confirm_quit(self) -> None:
+        reply = QMessageBox.question(self, "Confirm Quit", "Are you sure you want to quit?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No, QMessageBox.StandardButton.No)
+        if reply == QMessageBox.StandardButton.Yes: QApplication.instance().quit()
 
     def load_measurement(self) -> None:
         fname, _ = QFileDialog.getOpenFileName(self, "Open Audio File", "", "Audio Files (*.wav)")
@@ -323,21 +427,6 @@ class MainWindow(QMainWindow):
                    f"Cal Factor: {self.core.cal_factor:.4f}")
             self.info_label.setText(txt)
 
-    def set_calibration(self) -> None:
-        if self.core.audio_data is None:
-            QMessageBox.warning(self, "Warning", "Please load a measurement file first.")
-            return
-            
-        db_val, ok = QInputDialog.getDouble(self, "Calibration", 
-                                          "Enter Calibrator Level (dB):", 94.0, 0, 150, 1)
-        if ok:
-            try:
-                factor = self.core.set_calibration(db_val) 
-                self._update_info_text()
-                QMessageBox.information(self, "Calibration", f"Factor set to {factor:.4f}")
-            except Exception as e:
-                QMessageBox.critical(self, "Error", str(e))
-
     def toggle_playback(self) -> None:
         if self.player.is_playing:
             self.player.stop()
@@ -348,17 +437,14 @@ class MainWindow(QMainWindow):
                 self.btn_play.setText("Stop Audio")
 
     def get_selected_weighting(self) -> str:
-        uid = self.wtg_bg.checkedId()
-        return {1: 'A', 2: 'C', 3: 'Z'}.get(uid, 'A')
+        return {1: 'A', 2: 'C', 3: 'Z'}.get(self.wtg_bg.checkedId(), 'A')
 
     def get_selected_speed(self) -> str:
-        uid = self.spd_bg.checkedId()
-        return {1: 'Slow', 2: 'Fast', 3: 'Impulse'}.get(uid, 'Slow')
+        return {1: 'Slow', 2: 'Fast', 3: 'Impulse'}.get(self.spd_bg.checkedId(), 'Slow')
 
     def start_analysis(self) -> None:
         mode_btn = self.mode_bg.checkedButton()
         if not mode_btn: return
-        
         mode_tag = mode_btn.property("tag")
         weighting = self.get_selected_weighting()
         speed = self.get_selected_speed()
@@ -366,21 +452,25 @@ class MainWindow(QMainWindow):
         self.status_bar.showMessage(f"Analyzing {mode_tag.upper()}... please wait.")
         self._set_ui_busy(True)
         
-        # Determine Task
         if mode_tag == 'lp':
-            self.worker = AnalysisWorker(self.core.calculate_lp, weighting=weighting, speed=speed)
+            self.worker = workers.AnalysisWorker(self.core.calculate_lp, weighting=weighting, speed=speed)
         elif mode_tag == 'leq':
-            self.worker = AnalysisWorker(self.core.calculate_leq, weighting=weighting)
+            self.worker = workers.AnalysisWorker(self.core.calculate_leq, weighting=weighting)
         elif mode_tag == 'octave':
-            self.worker = AnalysisWorker(analysis.calculate_ansi_bands, self.core, weighting=weighting, resolution='octave')
+            self.worker = workers.AnalysisWorker(analysis.calculate_ansi_bands, self.core, weighting=weighting, resolution='octave')
         elif mode_tag == 'third':
-            self.worker = AnalysisWorker(analysis.calculate_ansi_bands, self.core, weighting=weighting, resolution='third')
+            self.worker = workers.AnalysisWorker(analysis.calculate_ansi_bands, self.core, weighting=weighting, resolution='third')
         elif mode_tag == 'psd':
-            self.worker = AnalysisWorker(analysis.calculate_psd, self.core)
+            self.worker = workers.AnalysisWorker(analysis.calculate_psd, self.core)
         elif mode_tag == 'spec':
-            # Spectrogram is fast enough or handled differently; simple pass-through here
-            self.handle_analysis_result(('spec', None)) 
-            return 
+            # Updated: Pass 'spec_fft' and 'spec_slice' from settings to analysis
+            self.worker = workers.AnalysisWorker(
+                analysis.calculate_spectrogram, 
+                self.core, 
+                weighting=weighting,
+                nfft=self.settings['spec_fft'],
+                slice_len=self.settings['spec_slice']
+            )
 
         if self.worker:
             self.worker.result_ready.connect(lambda res: self.handle_analysis_result((mode_tag, res)))
@@ -392,8 +482,7 @@ class MainWindow(QMainWindow):
         self.btn_analyze.setEnabled(not busy)
         self.central_widget.setEnabled(not busy)
         self.progress_bar.setVisible(busy)
-        if busy:
-            self.progress_bar.setValue(0)
+        if busy: self.progress_bar.setValue(0)
 
     def handle_analysis_error(self, msg: str) -> None:
         self._set_ui_busy(False)
@@ -405,47 +494,41 @@ class MainWindow(QMainWindow):
         self._set_ui_busy(False)
         self.status_bar.showMessage("Analysis Complete.")
         
-        self.figure.clear()
-        self.ax = self.figure.add_subplot(111)
-        
         weighting = self.get_selected_weighting()
 
         if mode == 'lp':
+            self.ax = self.plot_widget.prepare_plot()
             t, lp = result
             self.ax.plot(t, lp)
             self.ax.set_title(f"Sound Pressure Level ({weighting}-Weighted, {self.get_selected_speed()})")
             self.ax.set_xlabel("Time (s)")
             self.ax.set_ylabel("Lp (dB)")
             self.ax.grid(True)
+            self.ax.set_ylim(self.settings['lpplot_scales'])
             
         elif mode == 'leq':
+            self.ax = self.plot_widget.prepare_plot()
             leq_val = result
             self.ax.axis('off')
             self.ax.text(0.5, 0.6, f"Leq ({weighting})", ha='center', fontsize=16)
             self.ax.text(0.5, 0.4, f"{leq_val:.2f} dB", ha='center', fontsize=30, fontweight='bold', color='blue')
             
         elif mode in ['octave', 'third']:
+            self.ax = self.plot_widget.prepare_plot()
             freqs, levels = result
             x_pos = np.arange(len(freqs))
             self.ax.bar(x_pos, levels, width=0.8, color='green', alpha=0.7)
             self.ax.set_xticks(x_pos)
-            
-            # Smart labeling
-            labels = []
-            for f in freqs:
-                lbl = f"{int(f)}" if f < 1000 else f"{f/1000:.1f}k"
-                labels.append(lbl)
-                
+            labels = [f"{int(f)}" if f < 1000 else f"{f/1000:.1f}k" for f in freqs]
             if mode == 'third':
-                # Skip labels to avoid crowding
                 labels = [lbl if i % 3 == 0 else "" for i, lbl in enumerate(labels)]
-                    
             self.ax.set_xticklabels(labels, rotation=45)
             self.ax.set_title(f"{'Octave' if mode=='octave' else '1/3 Octave'} Band Levels")
             self.ax.set_ylabel("dB")
             self.ax.grid(axis='y')
 
         elif mode == 'psd':
+            self.ax = self.plot_widget.prepare_plot()
             f, lpxx = result
             self.ax.semilogx(f, lpxx)
             self.ax.set_title("Power Spectral Density")
@@ -455,20 +538,44 @@ class MainWindow(QMainWindow):
             self.ax.set_xlim(20, self.core.fs/2)
             
         elif mode == 'spec':
-            data = self.core.audio_data * self.core.cal_factor
-            if weighting != 'Z':
-                data = self.core.apply_weighting_filter(data, weighting)
-                
-            Pxx, freqs, bins, im = self.ax.specgram(
-                data, Fs=self.core.fs, NFFT=4096, noverlap=2048, cmap='inferno'
-            )
+            f, t, Sxx_db = result
+            
+            # Retrieve View/Scale Settings
+            cmap_name = self.settings['spec_cmap']
+            vmin = self.settings['spec_scale_min']
+            vmax = self.settings['spec_scale_max']
+            is_3d = self.settings['spec_3d']
+
+            if is_3d:
+                # Prepare 3D Plot
+                self.ax = self.plot_widget.prepare_plot(projection='3d')
+                T, F = np.meshgrid(t, f)
+                surf = self.ax.plot_surface(
+                    T, F, Sxx_db, 
+                    cmap=cmap_name, 
+                    vmin=vmin, vmax=vmax,
+                    linewidth=0, antialiased=False
+                )
+                self.ax.set_zlim(vmin, vmax)
+                self.ax.set_zlabel("Intensity (dB)")
+                self.figure.colorbar(surf, ax=self.ax, shrink=0.5, aspect=5).set_label('dB')
+            else:
+                # Prepare 2D Plot
+                self.ax = self.plot_widget.prepare_plot()
+                im = self.ax.pcolormesh(
+                    t, f, Sxx_db, 
+                    shading='auto', 
+                    cmap=cmap_name,
+                    vmin=vmin, 
+                    vmax=vmax
+                )
+                self.figure.colorbar(im, ax=self.ax).set_label('Intensity (dB)')
+            
             self.ax.set_title(f"Spectrogram ({weighting}-Weighted)")
             self.ax.set_xlabel("Time (s)")
             self.ax.set_ylabel("Frequency (Hz)")
-            self.figure.colorbar(im, ax=self.ax).set_label('Intensity (dB)')
 
-        self.canvas.draw()
-
+        self.plot_widget.draw()
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)

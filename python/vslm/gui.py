@@ -1,7 +1,7 @@
 # vslm/gui.py
 import sys
 import os
-from typing import Tuple, Any, Dict
+from typing import Tuple, Any
 
 import numpy as np
 from PySide6.QtWidgets import (
@@ -21,6 +21,7 @@ from . import analysis
 from . import dialogs
 from . import widgets
 from . import workers
+from .settings import VSLMSettings
 
 # --- Constants ---
 
@@ -63,41 +64,11 @@ class MainWindow(QMainWindow):
         self.player = AudioPlayer()
         self.worker = None 
         
-        # Cache for dynamic updates (e.g. colormap/scale changes)
+        # Cache for dynamic updates
         self.cached_result: Tuple[str, Any] = None 
         
-        # Application State
-        self.settings: Dict[str, Any] = {
-            'plot_spacing': 1.0,
-            
-            # LpPlot Settings
-            'lpplot_scales': (30, 120),
-            'lpplot_autoscale': False, # NEW
-            
-            # Leq Settings
-            'leq_int': 1.0,
-            'leq_perc': 90,
-            'leq_scales': (30, 120),
-            'leq_autoscale': False,    # NEW
-            'dose_crit': (3, 80, 90),
-            
-            # Band Settings
-            'band_res_idx': 0,
-            'band_method_idx': 0,
-            
-            # PSD Settings
-            'psd_fft': 4096,
-            'psd_overlap': 50,
-            'psd_win': "Hann",
-            
-            # Spectrogram Settings
-            'spec_fft': 4096,
-            'spec_slice': 0.1,
-            'spec_scale_min': 30,
-            'spec_scale_max': 120,
-            'spec_autoscale': False,   # NEW
-            'spec_cmap': "inferno"
-        }
+        # Initialize Settings Dataclass
+        self.settings = VSLMSettings()
 
         # Main UI Container
         self.central_widget = QWidget()
@@ -183,15 +154,26 @@ class MainWindow(QMainWindow):
         act_psd_window = QAction("Window", self)
         act_psd_window.triggered.connect(self.dlg_psd_window)
         psd_menu.addAction(act_psd_window)
+        
+        # New PSD Scales option
+        act_psd_scales = QAction("Plot Scales", self)
+        act_psd_scales.triggered.connect(self.dlg_psd_scales)
+        psd_menu.addAction(act_psd_scales)
 
         # Spectrogram Menu
         spec_menu = menubar.addMenu("Spectrogram")
         act_spec_fft = QAction("FFT Size", self)
         act_spec_fft.triggered.connect(self.dlg_spec_fft)
         spec_menu.addAction(act_spec_fft)
+        
+        act_spec_overlap = QAction("Overlap", self)
+        act_spec_overlap.triggered.connect(self.dlg_spec_overlap)
+        spec_menu.addAction(act_spec_overlap)
+        
         act_spec_slice = QAction("Slice Length", self)
         act_spec_slice.triggered.connect(self.dlg_spec_slice)
         spec_menu.addAction(act_spec_slice)
+        
         act_spec_scale = QAction("Plot Scale", self)
         act_spec_scale.triggered.connect(self.dlg_spec_scales)
         spec_menu.addAction(act_spec_scale)
@@ -270,10 +252,16 @@ class MainWindow(QMainWindow):
         layout.setSpacing(10)
         self.wtg_bg = QButtonGroup(self)
         options = [("A", 1), ("C", 2), ("Flat (Z)", 3)]
+        
+        map_w = {'A': 1, 'C': 2, 'Z': 3}
+        default_id = map_w.get(self.settings.frequency_weighting, 1)
+
         for text, uid in options:
             pair = widgets.LabelledToggleButton(text, uid, self.wtg_bg)
-            if uid == 1: pair.setChecked(True)
+            if uid == default_id: 
+                pair.setChecked(True)
             layout.addWidget(pair)
+            
         group.setLayout(layout)
         return group
 
@@ -283,10 +271,16 @@ class MainWindow(QMainWindow):
         layout.setSpacing(10)
         self.spd_bg = QButtonGroup(self)
         options = [("Slow\n(1.0s)", 1), ("Fast\n(125ms)", 2), ("Impulse\n(35ms/1.5s)", 3)]
+        
+        map_s = {'Slow': 1, 'Fast': 2, 'Impulse': 3}
+        default_id = map_s.get(self.settings.meter_speed, 1)
+
         for text, uid in options:
             pair = widgets.LabelledToggleButton(text, uid, self.spd_bg)
-            if uid == 1: pair.setChecked(True)
+            if uid == default_id:
+                pair.setChecked(True)
             layout.addWidget(pair)
+            
         group.setLayout(layout)
         return group
 
@@ -302,13 +296,16 @@ class MainWindow(QMainWindow):
             ("PSD", "psd"),
             ("Spectrogram", "spec")
         ]
+        
         for i, (name, tag) in enumerate(modes):
             from PySide6.QtWidgets import QRadioButton
             rb = QRadioButton(name)
             rb.setProperty("tag", tag)
-            if i == 0: rb.setChecked(True)
+            if tag == self.settings.analysis_mode:
+                rb.setChecked(True)
             self.mode_bg.addButton(rb, i)
             layout.addWidget(rb)
+            
         group.setLayout(layout)
         return group
 
@@ -329,7 +326,7 @@ class MainWindow(QMainWindow):
         self.btn_analyze.setEnabled(False)
         return self.btn_analyze
 
-    # --- Slots ---
+    # --- Slots (Dialogs) ---
 
     def dlg_calibration(self):
         if self.core.audio_data is None:
@@ -345,103 +342,119 @@ class MainWindow(QMainWindow):
                 QMessageBox.critical(self, "Error", str(e))
 
     def dlg_plot_spacing(self):
-        dlg = dialogs.PlotTimeSpacingDialog(self.settings['plot_spacing'], self)
-        if dlg.exec(): self.settings['plot_spacing'] = dlg.get_value()
+        dlg = dialogs.PlotTimeSpacingDialog(self.settings.plot_time_spacing, self)
+        if dlg.exec(): 
+            self.settings.plot_time_spacing = dlg.get_value()
 
     def dlg_lpplot_scales(self):
-        cmin, cmax = self.settings['lpplot_scales']
-        auto = self.settings.get('lpplot_autoscale', False)
+        cmin, cmax = self.settings.lpplot_y_min, self.settings.lpplot_y_max
+        auto = self.settings.lpplot_autoscale
         
         dlg = dialogs.PlotScalesDialog(cmin, cmax, auto, self)
         if dlg.exec(): 
-            cmin, cmax, auto = dlg.get_values()
-            self.settings['lpplot_scales'] = (cmin, cmax)
-            self.settings['lpplot_autoscale'] = auto
-            
-            # Dynamic Update for Lp Mode
+            self.settings.lpplot_y_min, self.settings.lpplot_y_max, self.settings.lpplot_autoscale = dlg.get_values()
+            # Dynamic Update for Lp
             if self.cached_result and self.cached_result[0] == 'lp':
                 self.handle_analysis_result(self.cached_result)
 
     def dlg_leq_integration(self):
-        dlg = dialogs.LeqIntegrationDialog(self.settings['leq_int'], self)
-        if dlg.exec(): self.settings['leq_int'] = dlg.get_value()
+        dlg = dialogs.LeqIntegrationDialog(self.settings.leq_integration_time, self)
+        if dlg.exec(): 
+            self.settings.leq_integration_time = dlg.get_value()
 
     def dlg_leq_percentile(self):
-        dlg = dialogs.LeqPercentileDialog(self.settings['leq_perc'], self)
-        if dlg.exec(): self.settings['leq_perc'] = dlg.get_value()
+        dlg = dialogs.LeqPercentileDialog(self.settings.leq_percentile, self)
+        if dlg.exec(): 
+            self.settings.leq_percentile = dlg.get_value()
 
     def dlg_leq_scales(self):
-        cmin, cmax = self.settings['leq_scales']
-        auto = self.settings.get('leq_autoscale', False)
+        cmin, cmax = self.settings.leq_y_min, self.settings.leq_y_max
+        auto = self.settings.leq_autoscale
         
         dlg = dialogs.PlotScalesDialog(cmin, cmax, auto, self)
         if dlg.exec(): 
-            cmin, cmax, auto = dlg.get_values()
-            self.settings['leq_scales'] = (cmin, cmax)
-            self.settings['leq_autoscale'] = auto
-            
-            # Leq result is text, but we update for consistency
+            self.settings.leq_y_min, self.settings.leq_y_max, self.settings.leq_autoscale = dlg.get_values()
             if self.cached_result and self.cached_result[0] == 'leq':
                 self.handle_analysis_result(self.cached_result)
 
     def dlg_noise_dose(self):
-        e, t, c = self.settings['dose_crit']
+        e = self.settings.dose_exchange_rate
+        t = self.settings.dose_threshold
+        c = self.settings.dose_criterion
         dlg = dialogs.NoiseDoseDialog(e, t, c, self)
-        if dlg.exec(): self.settings['dose_crit'] = dlg.get_values()
+        if dlg.exec(): 
+            self.settings.dose_exchange_rate, self.settings.dose_threshold, self.settings.dose_criterion = dlg.get_values()
 
     def dlg_band_resolution(self):
-        dlg = dialogs.BandResolutionDialog(self.settings['band_res_idx'], self)
-        if dlg.exec(): pass
+        dlg = dialogs.BandResolutionDialog(self.settings.band_resolution_index, self)
+        if dlg.exec(): pass 
 
     def dlg_band_method(self):
-        dlg = dialogs.BandMethodDialog(self.settings['band_method_idx'], self)
+        dlg = dialogs.BandMethodDialog(self.settings.band_method_index, self)
         if dlg.exec(): pass
 
     def dlg_psd_fft(self):
-        dlg = dialogs.FFTSizeDialog(self.settings['psd_fft'], self)
-        if dlg.exec(): self.settings['psd_fft'] = dlg.get_value()
+        dlg = dialogs.FFTSizeDialog(self.settings.psd_fft_size, self)
+        if dlg.exec(): 
+            self.settings.psd_fft_size = dlg.get_value()
 
     def dlg_psd_overlap(self):
-        dlg = dialogs.OverlapDialog(self.settings['psd_overlap'], self)
-        if dlg.exec(): self.settings['psd_overlap'] = dlg.get_value()
+        dlg = dialogs.OverlapDialog(self.settings.psd_overlap_percent, self)
+        if dlg.exec(): 
+            self.settings.psd_overlap_percent = dlg.get_value()
 
     def dlg_psd_window(self):
-        dlg = dialogs.WindowDialog(self.settings['psd_win'], self)
-        if dlg.exec(): self.settings['psd_win'] = dlg.get_value()
+        dlg = dialogs.WindowDialog(self.settings.psd_window, self)
+        if dlg.exec(): 
+            self.settings.psd_window = dlg.get_value()
 
-    def dlg_spec_fft(self):
-        dlg = dialogs.FFTSizeDialog(self.settings['spec_fft'], self)
-        if dlg.exec(): self.settings['spec_fft'] = dlg.get_value()
-
-    def dlg_spec_slice(self):
-        dlg = dialogs.SliceLengthDialog(self.settings['spec_slice'], self)
-        if dlg.exec(): self.settings['spec_slice'] = dlg.get_value()
-
-    def dlg_spec_scales(self):
-        cmin, cmax = self.settings['spec_scale_min'], self.settings['spec_scale_max']
-        auto = self.settings.get('spec_autoscale', False)
+    def dlg_psd_scales(self):
+        cmin, cmax = self.settings.psd_y_min, self.settings.psd_y_max
+        auto = self.settings.psd_autoscale
         
         dlg = dialogs.PlotScalesDialog(cmin, cmax, auto, self)
         if dlg.exec(): 
-            cmin, cmax, auto = dlg.get_values()
-            self.settings['spec_scale_min'] = cmin
-            self.settings['spec_scale_max'] = cmax
-            self.settings['spec_autoscale'] = auto
-            
-            # Dynamic Update for Spectrogram Mode
+            self.settings.psd_y_min, self.settings.psd_y_max, self.settings.psd_autoscale = dlg.get_values()
+            # Dynamic Update
+            if self.cached_result and self.cached_result[0] == 'psd':
+                self.handle_analysis_result(self.cached_result)
+
+    def dlg_spec_fft(self):
+        dlg = dialogs.FFTSizeDialog(self.settings.spec_fft_size, self)
+        if dlg.exec(): 
+            self.settings.spec_fft_size = dlg.get_value()
+
+    def dlg_spec_overlap(self):
+        """Dialog for Spectrogram Overlap %."""
+        dlg = dialogs.OverlapDialog(self.settings.spec_overlap_percent, self)
+        if dlg.exec():
+            self.settings.spec_overlap_percent = dlg.get_value()
+            self.settings.spec_use_overlap = True
+
+    def dlg_spec_slice(self):
+        dlg = dialogs.SliceLengthDialog(self.settings.spec_slice_length, self)
+        if dlg.exec(): 
+            self.settings.spec_slice_length = dlg.get_value()
+            self.settings.spec_use_overlap = False
+
+    def dlg_spec_scales(self):
+        cmin, cmax = self.settings.spec_y_min, self.settings.spec_y_max
+        auto = self.settings.spec_autoscale
+        
+        dlg = dialogs.PlotScalesDialog(cmin, cmax, auto, self)
+        if dlg.exec(): 
+            self.settings.spec_y_min, self.settings.spec_y_max, self.settings.spec_autoscale = dlg.get_values()
+            # Dynamic Update
             if self.cached_result and self.cached_result[0] == 'spec':
                 self.handle_analysis_result(self.cached_result)
 
     def dlg_spec_view(self):
-        c = self.settings['spec_cmap']
+        c = self.settings.spec_colormap
         dlg = dialogs.SpectrogramViewDialog(c, self)
         if dlg.exec(): 
-            new_cmap = dlg.get_value()
-            self.settings['spec_cmap'] = new_cmap
-            
-            # Dynamic Update for Spectrogram Colormap
+            self.settings.spec_colormap = dlg.get_value()
             if self.cached_result and self.cached_result[0] == 'spec':
-                self.status_bar.showMessage(f"Updating colormap to {new_cmap}...")
+                self.status_bar.showMessage(f"Updating colormap to {self.settings.spec_colormap}...")
                 self.handle_analysis_result(self.cached_result)
 
     # --- Main Logic ---
@@ -493,9 +506,14 @@ class MainWindow(QMainWindow):
     def start_analysis(self) -> None:
         mode_btn = self.mode_bg.checkedButton()
         if not mode_btn: return
+        
         mode_tag = mode_btn.property("tag")
         weighting = self.get_selected_weighting()
         speed = self.get_selected_speed()
+        
+        self.settings.analysis_mode = mode_tag
+        self.settings.frequency_weighting = weighting
+        self.settings.meter_speed = speed
         
         self.status_bar.showMessage(f"Analyzing {mode_tag.upper()}... please wait.")
         self._set_ui_busy(True)
@@ -509,14 +527,26 @@ class MainWindow(QMainWindow):
         elif mode_tag == 'third':
             self.worker = workers.AnalysisWorker(analysis.calculate_ansi_bands, self.core, weighting=weighting, resolution='third')
         elif mode_tag == 'psd':
-            self.worker = workers.AnalysisWorker(analysis.calculate_psd, self.core)
+            self.worker = workers.AnalysisWorker(
+                analysis.calculate_psd, 
+                self.core,
+                nfft=self.settings.psd_fft_size,
+                overlap_percent=self.settings.psd_overlap_percent,
+                window=self.settings.psd_window
+            )
         elif mode_tag == 'spec':
+            # Logic: If using overlap, force slice_len to None so backend uses overlap ratio
+            s_len = self.settings.spec_slice_length
+            if self.settings.spec_use_overlap:
+                s_len = None
+            
             self.worker = workers.AnalysisWorker(
                 analysis.calculate_spectrogram, 
                 self.core, 
                 weighting=weighting,
-                nfft=self.settings['spec_fft'],
-                slice_len=self.settings['spec_slice']
+                nfft=self.settings.spec_fft_size,
+                slice_len=s_len,
+                overlap_ratio=self.settings.spec_overlap_percent / 100.0
             )
 
         if self.worker:
@@ -539,29 +569,28 @@ class MainWindow(QMainWindow):
     def handle_analysis_result(self, payload: Tuple[str, Any]) -> None:
         mode, result = payload
         
-        # Cache results for re-plotting (e.g. dynamic colormap changes)
         self.cached_result = payload
         
         self._set_ui_busy(False)
         self.status_bar.showMessage("Analysis Complete.")
         
-        weighting = self.get_selected_weighting()
+        weighting = self.settings.frequency_weighting
+        speed = self.settings.meter_speed
 
         if mode == 'lp':
             self.ax = self.plot_widget.prepare_plot()
             t, lp = result
             self.ax.plot(t, lp)
-            self.ax.set_title(f"Sound Pressure Level ({weighting}-Weighted, {self.get_selected_speed()})")
+            self.ax.set_title(f"Sound Pressure Level ({weighting}-Weighted, {speed})")
             self.ax.set_xlabel("Time (s)")
             self.ax.set_ylabel("Lp (dB)")
             self.ax.grid(True)
             
-            # Apply Autoscale or Fixed Settings
-            if self.settings.get('lpplot_autoscale', False) and len(lp) > 0:
+            if self.settings.lpplot_autoscale and len(lp) > 0:
                 ymin, ymax = np.min(lp) - 5, np.max(lp) + 5
                 self.ax.set_ylim(ymin, ymax)
             else:
-                self.ax.set_ylim(self.settings['lpplot_scales'])
+                self.ax.set_ylim(self.settings.lpplot_y_min, self.settings.lpplot_y_max)
             
         elif mode == 'leq':
             self.ax = self.plot_widget.prepare_plot()
@@ -580,7 +609,11 @@ class MainWindow(QMainWindow):
             if mode == 'third':
                 labels = [lbl if i % 3 == 0 else "" for i, lbl in enumerate(labels)]
             self.ax.set_xticklabels(labels, rotation=45)
-            self.ax.set_title(f"{'Octave' if mode=='octave' else '1/3 Octave'} Band Levels")
+            
+            # --- Updated Title with Weighting ---
+            mode_text = 'Octave' if mode == 'octave' else '1/3 Octave'
+            self.ax.set_title(f"{mode_text} Band Levels ({weighting}-Weighted)")
+            
             self.ax.set_ylabel("dB")
             self.ax.grid(axis='y')
 
@@ -594,20 +627,23 @@ class MainWindow(QMainWindow):
             self.ax.grid(True, which="both")
             self.ax.set_xlim(20, self.core.fs/2)
             
+            if self.settings.psd_autoscale and len(lpxx) > 0:
+                ymin, ymax = np.min(lpxx) - 5, np.max(lpxx) + 5
+                self.ax.set_ylim(ymin, ymax)
+            else:
+                self.ax.set_ylim(self.settings.psd_y_min, self.settings.psd_y_max)
+            
         elif mode == 'spec':
             f, t, Sxx_db = result
             
-            # Retrieve View/Scale Settings
-            cmap_name = self.settings['spec_cmap']
+            cmap_name = self.settings.spec_colormap
             
-            # Apply Autoscale or Fixed Settings
-            if self.settings.get('spec_autoscale', False):
+            if self.settings.spec_autoscale:
                 vmin, vmax = np.min(Sxx_db), np.max(Sxx_db)
             else:
-                vmin = self.settings['spec_scale_min']
-                vmax = self.settings['spec_scale_max']
+                vmin = self.settings.spec_y_min
+                vmax = self.settings.spec_y_max
 
-            # Prepare 2D Plot
             self.ax = self.plot_widget.prepare_plot()
             im = self.ax.pcolormesh(
                 t, f, Sxx_db, 

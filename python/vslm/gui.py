@@ -63,26 +63,40 @@ class MainWindow(QMainWindow):
         self.player = AudioPlayer()
         self.worker = None 
         
+        # Cache for dynamic updates (e.g. colormap/scale changes)
+        self.cached_result: Tuple[str, Any] = None 
+        
         # Application State
         self.settings: Dict[str, Any] = {
             'plot_spacing': 1.0,
+            
+            # LpPlot Settings
             'lpplot_scales': (30, 120),
+            'lpplot_autoscale': False, # NEW
+            
+            # Leq Settings
             'leq_int': 1.0,
             'leq_perc': 90,
             'leq_scales': (30, 120),
+            'leq_autoscale': False,    # NEW
             'dose_crit': (3, 80, 90),
+            
+            # Band Settings
             'band_res_idx': 0,
             'band_method_idx': 0,
+            
+            # PSD Settings
             'psd_fft': 4096,
             'psd_overlap': 50,
             'psd_win': "Hann",
+            
             # Spectrogram Settings
             'spec_fft': 4096,
-            'spec_slice': 0.1,  # Default 100ms slice
+            'spec_slice': 0.1,
             'spec_scale_min': 30,
             'spec_scale_max': 120,
-            'spec_cmap': "inferno",
-            'spec_3d': False
+            'spec_autoscale': False,   # NEW
+            'spec_cmap': "inferno"
         }
 
         # Main UI Container
@@ -336,8 +350,17 @@ class MainWindow(QMainWindow):
 
     def dlg_lpplot_scales(self):
         cmin, cmax = self.settings['lpplot_scales']
-        dlg = dialogs.PlotScalesDialog(cmin, cmax, self)
-        if dlg.exec(): self.settings['lpplot_scales'] = dlg.get_values()
+        auto = self.settings.get('lpplot_autoscale', False)
+        
+        dlg = dialogs.PlotScalesDialog(cmin, cmax, auto, self)
+        if dlg.exec(): 
+            cmin, cmax, auto = dlg.get_values()
+            self.settings['lpplot_scales'] = (cmin, cmax)
+            self.settings['lpplot_autoscale'] = auto
+            
+            # Dynamic Update for Lp Mode
+            if self.cached_result and self.cached_result[0] == 'lp':
+                self.handle_analysis_result(self.cached_result)
 
     def dlg_leq_integration(self):
         dlg = dialogs.LeqIntegrationDialog(self.settings['leq_int'], self)
@@ -349,8 +372,17 @@ class MainWindow(QMainWindow):
 
     def dlg_leq_scales(self):
         cmin, cmax = self.settings['leq_scales']
-        dlg = dialogs.PlotScalesDialog(cmin, cmax, self)
-        if dlg.exec(): self.settings['leq_scales'] = dlg.get_values()
+        auto = self.settings.get('leq_autoscale', False)
+        
+        dlg = dialogs.PlotScalesDialog(cmin, cmax, auto, self)
+        if dlg.exec(): 
+            cmin, cmax, auto = dlg.get_values()
+            self.settings['leq_scales'] = (cmin, cmax)
+            self.settings['leq_autoscale'] = auto
+            
+            # Leq result is text, but we update for consistency
+            if self.cached_result and self.cached_result[0] == 'leq':
+                self.handle_analysis_result(self.cached_result)
 
     def dlg_noise_dose(self):
         e, t, c = self.settings['dose_crit']
@@ -387,14 +419,30 @@ class MainWindow(QMainWindow):
 
     def dlg_spec_scales(self):
         cmin, cmax = self.settings['spec_scale_min'], self.settings['spec_scale_max']
-        dlg = dialogs.PlotScalesDialog(cmin, cmax, self)
+        auto = self.settings.get('spec_autoscale', False)
+        
+        dlg = dialogs.PlotScalesDialog(cmin, cmax, auto, self)
         if dlg.exec(): 
-            self.settings['spec_scale_min'], self.settings['spec_scale_max'] = dlg.get_values()
+            cmin, cmax, auto = dlg.get_values()
+            self.settings['spec_scale_min'] = cmin
+            self.settings['spec_scale_max'] = cmax
+            self.settings['spec_autoscale'] = auto
+            
+            # Dynamic Update for Spectrogram Mode
+            if self.cached_result and self.cached_result[0] == 'spec':
+                self.handle_analysis_result(self.cached_result)
 
     def dlg_spec_view(self):
-        c, v = self.settings['spec_cmap'], self.settings['spec_3d']
-        dlg = dialogs.SpectrogramViewDialog(c, v, self)
-        if dlg.exec(): self.settings['spec_cmap'], self.settings['spec_3d'] = dlg.get_values()
+        c = self.settings['spec_cmap']
+        dlg = dialogs.SpectrogramViewDialog(c, self)
+        if dlg.exec(): 
+            new_cmap = dlg.get_value()
+            self.settings['spec_cmap'] = new_cmap
+            
+            # Dynamic Update for Spectrogram Colormap
+            if self.cached_result and self.cached_result[0] == 'spec':
+                self.status_bar.showMessage(f"Updating colormap to {new_cmap}...")
+                self.handle_analysis_result(self.cached_result)
 
     # --- Main Logic ---
 
@@ -463,7 +511,6 @@ class MainWindow(QMainWindow):
         elif mode_tag == 'psd':
             self.worker = workers.AnalysisWorker(analysis.calculate_psd, self.core)
         elif mode_tag == 'spec':
-            # Updated: Pass 'spec_fft' and 'spec_slice' from settings to analysis
             self.worker = workers.AnalysisWorker(
                 analysis.calculate_spectrogram, 
                 self.core, 
@@ -491,6 +538,10 @@ class MainWindow(QMainWindow):
 
     def handle_analysis_result(self, payload: Tuple[str, Any]) -> None:
         mode, result = payload
+        
+        # Cache results for re-plotting (e.g. dynamic colormap changes)
+        self.cached_result = payload
+        
         self._set_ui_busy(False)
         self.status_bar.showMessage("Analysis Complete.")
         
@@ -504,7 +555,13 @@ class MainWindow(QMainWindow):
             self.ax.set_xlabel("Time (s)")
             self.ax.set_ylabel("Lp (dB)")
             self.ax.grid(True)
-            self.ax.set_ylim(self.settings['lpplot_scales'])
+            
+            # Apply Autoscale or Fixed Settings
+            if self.settings.get('lpplot_autoscale', False) and len(lp) > 0:
+                ymin, ymax = np.min(lp) - 5, np.max(lp) + 5
+                self.ax.set_ylim(ymin, ymax)
+            else:
+                self.ax.set_ylim(self.settings['lpplot_scales'])
             
         elif mode == 'leq':
             self.ax = self.plot_widget.prepare_plot()
@@ -542,34 +599,24 @@ class MainWindow(QMainWindow):
             
             # Retrieve View/Scale Settings
             cmap_name = self.settings['spec_cmap']
-            vmin = self.settings['spec_scale_min']
-            vmax = self.settings['spec_scale_max']
-            is_3d = self.settings['spec_3d']
-
-            if is_3d:
-                # Prepare 3D Plot
-                self.ax = self.plot_widget.prepare_plot(projection='3d')
-                T, F = np.meshgrid(t, f)
-                surf = self.ax.plot_surface(
-                    T, F, Sxx_db, 
-                    cmap=cmap_name, 
-                    vmin=vmin, vmax=vmax,
-                    linewidth=0, antialiased=False
-                )
-                self.ax.set_zlim(vmin, vmax)
-                self.ax.set_zlabel("Intensity (dB)")
-                self.figure.colorbar(surf, ax=self.ax, shrink=0.5, aspect=5).set_label('dB')
+            
+            # Apply Autoscale or Fixed Settings
+            if self.settings.get('spec_autoscale', False):
+                vmin, vmax = np.min(Sxx_db), np.max(Sxx_db)
             else:
-                # Prepare 2D Plot
-                self.ax = self.plot_widget.prepare_plot()
-                im = self.ax.pcolormesh(
-                    t, f, Sxx_db, 
-                    shading='auto', 
-                    cmap=cmap_name,
-                    vmin=vmin, 
-                    vmax=vmax
-                )
-                self.figure.colorbar(im, ax=self.ax).set_label('Intensity (dB)')
+                vmin = self.settings['spec_scale_min']
+                vmax = self.settings['spec_scale_max']
+
+            # Prepare 2D Plot
+            self.ax = self.plot_widget.prepare_plot()
+            im = self.ax.pcolormesh(
+                t, f, Sxx_db, 
+                shading='auto', 
+                cmap=cmap_name,
+                vmin=vmin, 
+                vmax=vmax
+            )
+            self.figure.colorbar(im, ax=self.ax).set_label('Intensity (dB)')
             
             self.ax.set_title(f"Spectrogram ({weighting}-Weighted)")
             self.ax.set_xlabel("Time (s)")

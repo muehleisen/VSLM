@@ -1,6 +1,6 @@
 # vslm/widgets.py
 from PySide6.QtWidgets import (
-    QWidget, QVBoxLayout, QLabel, QPushButton, QSizePolicy
+    QWidget, QVBoxLayout, QLabel, QPushButton
 )
 from PySide6.QtCore import Qt, QSize
 from PySide6.QtGui import QCursor
@@ -9,8 +9,6 @@ from PySide6.QtGui import QCursor
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.backends.backend_qtagg import NavigationToolbar2QT as NavigationToolbar
 from matplotlib.figure import Figure
-# Essential for '3d' projection to work
-from mpl_toolkits.mplot3d import Axes3D 
 
 class VSLMPlotWidget(QWidget):
     """
@@ -45,16 +43,13 @@ class VSLMPlotWidget(QWidget):
         self.ax.text(0.5, 0.5, "Load a file to begin", ha='center', va='center')
         self.canvas.draw()
 
-    def prepare_plot(self, projection=None):
+    def prepare_plot(self):
         """
-        Clears the figure and prepares for data plotting.
-        Args:
-            projection (str): '3d' for 3D plots, None for standard 2D.
+        Clears the figure and prepares for data plotting (Axis ON).
         """
         self.figure.clear()
-        self.ax = self.figure.add_subplot(111, projection=projection)
-        if not projection: 
-            self.ax.axis('on') 
+        self.ax = self.figure.add_subplot(111)
+        self.ax.axis('on') 
         return self.ax
 
     def draw(self):

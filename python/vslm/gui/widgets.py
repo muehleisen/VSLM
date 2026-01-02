@@ -1,29 +1,26 @@
-# python2/vslm/gui/widgets.py
+import matplotlib
+matplotlib.use('QtAgg') # Ensure QtAgg backend
 from PySide6.QtWidgets import QWidget, QVBoxLayout
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
+from matplotlib.backends.backend_qtagg import NavigationToolbar2QT as NavigationToolbar
 from matplotlib.figure import Figure
-import matplotlib.pyplot as plt
 
 class MatplotlibWidget(QWidget):
-    """
-    A simple wrapper to display Matplotlib plots in PySide6.
-    """
     def __init__(self, parent=None):
         super().__init__(parent)
         self.layout = QVBoxLayout(self)
-        self.layout.setContentsMargins(0,0,0,0)
         
-        self.figure = Figure(figsize=(5, 4), dpi=100)
+        # Create the Figure and Canvas
+        self.figure = Figure()
         self.canvas = FigureCanvas(self.figure)
-        self.layout.addWidget(self.canvas)
         
-        self.ax = self.figure.add_subplot(111)
-        self.ax.text(0.5, 0.5, "Ready", ha='center', va='center')
-        self.ax.axis('off')
-
-    def reset(self):
-        self.figure.clear()
-        self.ax = self.figure.add_subplot(111)
+        # Create the Toolbar
+        # The toolbar requires the canvas and the parent widget
+        self.toolbar = NavigationToolbar(self.canvas, self)
+        
+        # Add widgets to layout: Toolbar first (top), then Canvas
+        self.layout.addWidget(self.toolbar)
+        self.layout.addWidget(self.canvas)
 
     def draw(self):
         self.canvas.draw()

@@ -1,4 +1,3 @@
-# python2/vslm/analysis_engine.py
 import numpy as np
 import soundfile as sf
 import os
@@ -37,19 +36,8 @@ class StreamProcessor:
                      band_order=24):
         """
         Generator that yields analysis results for each time block.
-        
-        Args:
-            block_size_ms (float): Size of processing chunks in milliseconds.
-            weighting (str): Frequency weighting ('A', 'C', 'Z').
-            do_band_analysis (bool): Whether to compute octave bands.
-            band_resolution (str): 'octave' or 'third'.
-            band_order (int): Filter order for bands (default 24 for Class 1).
-            
-        Yields:
-            dict: A dictionary containing 'time', 'leq', and optional 'bands'.
         """
         # 1. Initialize Stateful Filters
-        # These classes now handle their own 'zi' state internally.
         weighting_filter = WeightingFilter(self.fs, weighting)
         
         band_bank = None
@@ -57,59 +45,73 @@ class StreamProcessor:
             band_bank = OctaveFilterBank(self.fs, resolution=band_resolution, order=band_order)
 
         # 2. Calculate Block Size
-        # Ensure block size corresponds to an integer number of samples
         block_samples = int(self.fs * (block_size_ms / 1000.0))
         if block_samples == 0:
             raise ValueError("Block size is too small for this sampling rate.")
         
-        # 3. Stream Processing Loop
-        current_time = 0.0
-        
-        # sf.blocks reads the file chunk-by-chunk efficiently
-        # fill_value=0.0 ensures the last chunk is padded if it's too short
-        block_gen = sf.blocks(
-            self.filepath, 
-            blocksize=block_samples, 
-            always_2d=False, 
-            fill_value=0.0
-        )
-        
-        for chunk in block_gen:
-            # Handle multi-channel: Downmix to mono (average)
-            # Future versions could allow channel selection
-            if chunk.ndim > 1:
-                chunk = np.mean(chunk, axis=1)
-
-            # A. Apply Calibration
-            # P_pa = P_normalized * CalibrationFactor
-            calibrated_chunk = chunk * self.cal_factor
+        # 3. Open File and Seed Filters (Minimize Startup Glitch)
+        # We manually manage the file handle to allow seek operations
+        with sf.SoundFile(self.filepath) as f:
             
-            # B. Apply Frequency Weighting (Stateful)
-            weighted_chunk = weighting_filter.process_chunk(calibrated_chunk)
+            # --- START SEEDING LOGIC ---
+            # Read the first chunk to "warm up" the filters
+            seed_data = f.read(block_samples, always_2d=False, fill_value=0.0)
             
-            # C. Compute Broadband Leq (for this block)
-            # Add tiny epsilon to avoid log10(0)
-            ms_broadband = np.mean(weighted_chunk**2)
-            leq_block = 10 * np.log10(ms_broadband / (20e-6)**2 + 1e-30)
+            # Handle multi-channel mixing for seeding
+            if seed_data.ndim > 1:
+                seed_data = np.mean(seed_data, axis=1)
+                
+            # Apply calibration to seed data
+            seed_data = seed_data * self.cal_factor
             
-            result = {
-                'time': current_time,
-                'leq': leq_block
-            }
-            
-            # D. Compute Band Levels (Optional)
+            # Run the Forward-Backward initialization
+            weighting_filter.initialize_state(seed_data)
             if band_bank:
-                # Returns matrix [n_samples, n_bands]
-                filtered_bands = band_bank.process_chunk(calibrated_chunk)
+                band_bank.initialize_state(seed_data)
                 
-                # Compute RMS for each band in this block
-                ms_bands = np.mean(filtered_bands**2, axis=0)
-                leq_bands = 10 * np.log10(ms_bands / (20e-6)**2 + 1e-30)
-                
-                result['bands'] = leq_bands
-                result['band_freqs'] = band_bank.frequencies
+            # Reset file pointer to beginning for actual analysis
+            f.seek(0)
+            # --- END SEEDING LOGIC ---
 
-            # Yield result to the GUI or Data Accumulator
-            yield result
+            # 4. Stream Processing Loop
+            current_time = 0.0
             
-            current_time += (block_size_ms / 1000.0)
+            # CORRECTED: Use the method f.blocks() on the open object
+            # instead of the module function sf.blocks(f)
+            block_gen = f.blocks(
+                blocksize=block_samples, 
+                always_2d=False, 
+                fill_value=0.0
+            )
+            
+            for chunk in block_gen:
+                if chunk.ndim > 1:
+                    chunk = np.mean(chunk, axis=1)
+
+                # A. Apply Calibration
+                calibrated_chunk = chunk * self.cal_factor
+                
+                # B. Apply Frequency Weighting (Stateful)
+                weighted_chunk = weighting_filter.process_chunk(calibrated_chunk)
+                
+                # C. Compute Broadband Leq
+                ms_broadband = np.mean(weighted_chunk**2)
+                leq_block = 10 * np.log10(ms_broadband / (20e-6)**2 + 1e-30)
+                
+                result = {
+                    'time': current_time,
+                    'leq': leq_block
+                }
+                
+                # D. Compute Band Levels (Optional)
+                if band_bank:
+                    filtered_bands = band_bank.process_chunk(calibrated_chunk)
+                    ms_bands = np.mean(filtered_bands**2, axis=0)
+                    leq_bands = 10 * np.log10(ms_bands / (20e-6)**2 + 1e-30)
+                    
+                    result['bands'] = leq_bands
+                    result['band_freqs'] = band_bank.frequencies
+
+                yield result
+                
+                current_time += (block_size_ms / 1000.0)

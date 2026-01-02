@@ -181,11 +181,7 @@ class WeightingFilter:
         
         self.passthrough = False
         
-        # While we support dynamic generation, we still warn if Fs is unusual
-        # to ensure user isn't accidentally processing 8kHz files for metrology.
         if fs not in SUPPORTED_FS:
-             # We allow it to proceed (soft warning) because the algorithm handles it,
-             # but strictly speaking VSLM targets these rates.
              print(f"Warning: Non-standard sampling rate {fs} Hz. "
                    "Weighting accuracy depends on dynamic filter generation.")
 
@@ -194,7 +190,6 @@ class WeightingFilter:
             self.sos = design_optimized_sos(fs, self.weighting_type)
             
             # Initialize state (zi)
-            # sosfilt_zi needs shape (n_sections, 2)
             self.zi = scipy.signal.sosfilt_zi(self.sos)
             
         except Exception as e:
@@ -205,20 +200,34 @@ class WeightingFilter:
         if not self.passthrough:
             self.zi = scipy.signal.sosfilt_zi(self.sos)
 
+    def initialize_state(self, chunk_data):
+        """
+        Seeds the filter state (zi) to minimize transient glitches.
+        Method: Runs forward-backward on the chunk and uses the final backward state.
+        
+        Args:
+            chunk_data (np.ndarray): The first block of audio to be analyzed.
+        """
+        if self.passthrough:
+            return
+            
+        # 1. Forward pass (starting from zero state) -> gets state at end of chunk
+        zi_init = np.zeros_like(self.zi)
+        _, zi_fwd = scipy.signal.sosfilt(self.sos, chunk_data, zi=zi_init)
+        
+        # 2. Backward pass (starting from forward state) -> gets state at start of chunk
+        _, zi_bwd = scipy.signal.sosfilt(self.sos, chunk_data[::-1], zi=zi_fwd)
+        
+        # 3. Set this "warmed up" state as the actual starting state
+        self.zi = zi_bwd
+
     def process_chunk(self, chunk_data):
         """
         Filters a chunk of audio data, updating internal state.
-        
-        Args:
-            chunk_data (np.ndarray): 1D array of audio samples.
-            
-        Returns:
-            np.ndarray: Filtered audio data.
         """
         if self.passthrough:
             return chunk_data
         
-        # sosfilt is generally more numerically stable than lfilter for high orders
         filtered_data, self.zi = scipy.signal.sosfilt(
             self.sos, chunk_data, zi=self.zi
         )

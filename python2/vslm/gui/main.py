@@ -1,15 +1,16 @@
-# python2/vslm/gui/main.py
 import sys
 from pathlib import Path
 from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, 
                                QHBoxLayout, QPushButton, QLabel, QGroupBox, 
                                QFileDialog, QMessageBox, QFrame, QButtonGroup, 
                                QRadioButton, QProgressBar, QComboBox)
-from PySide6.QtGui import QAction
+from PySide6.QtGui import QAction, QDesktopServices
+from PySide6.QtCore import QUrl
 
 # --- VSLM Imports ---
 from .waveform import WaveformDialog
 from .calibration_dialog import CalibrationDialog
+from .about_dialog import AboutDialog 
 from .widgets import MatplotlibWidget
 from .workers import AnalysisWorker
 from .plotter import ResultPlotter
@@ -24,7 +25,7 @@ class MainWindow(QMainWindow):
         
         # 1. Load Default Settings
         self.settings_mgr = SettingsManager()
-        self.settings = self.settings_mgr.load() # Loads from ~/.vslm_settings.yaml
+        self.settings = self.settings_mgr.load() 
         
         # 2. Application State
         self.filepath: Path | None = None
@@ -34,6 +35,7 @@ class MainWindow(QMainWindow):
         self.block_size_ms: float = self.settings.block_size_ms
         
         self.last_results: list = [] 
+        self.has_unsaved_data: bool = False # DIRTY FLAG
         self.worker: AnalysisWorker | None = None
         
         # 3. Setup UI
@@ -47,8 +49,11 @@ class MainWindow(QMainWindow):
     def _init_menu_bar(self):
         menu_bar = self.menuBar()
         
-        # --- Settings Menu ---
-        menu_settings = menu_bar.addMenu("Settings")
+        # --- File Menu ---
+        menu_file = menu_bar.addMenu("File")
+        
+        # Settings Submenu (Load/Save)
+        menu_settings = menu_file.addMenu("Settings")
         
         act_load_sets = QAction("Load Settings...", self)
         act_load_sets.triggered.connect(self.on_action_load_settings)
@@ -58,17 +63,41 @@ class MainWindow(QMainWindow):
         act_save_sets.triggered.connect(self.on_action_save_settings)
         menu_settings.addAction(act_save_sets)
         
-        # --- Export Menu ---
-        self.menu_export = menu_bar.addMenu("Export Results")
-        self.menu_export.setEnabled(False) # Disabled until we have results
+        menu_file.addSeparator()
         
-        act_export_csv = QAction("Save CSV...", self)
+        act_quit = QAction("Quit", self)
+        act_quit.setShortcut("Ctrl+Q")
+        act_quit.triggered.connect(self.close) # Triggers closeEvent
+        menu_file.addAction(act_quit)
+        
+        # --- Export Menu ---
+        self.menu_export = menu_bar.addMenu("Export")
+        self.menu_export.setEnabled(False) 
+        
+        act_export_csv = QAction("Save Results (CSV)...", self)
         act_export_csv.triggered.connect(self.on_export_csv)
         self.menu_export.addAction(act_export_csv)
         
         act_save_fig = QAction("Save Plot Figure...", self)
         act_save_fig.triggered.connect(self.on_action_save_figure)
         self.menu_export.addAction(act_save_fig)
+        
+        # --- Help Menu ---
+        menu_help = menu_bar.addMenu("Help")
+        
+        act_docs = QAction("Documentation", self)
+        act_docs.triggered.connect(lambda: self.on_open_url("https://example.com/docs"))
+        menu_help.addAction(act_docs)
+        
+        act_tuts = QAction("Tutorials", self)
+        act_tuts.triggered.connect(lambda: self.on_open_url("https://example.com/tutorials"))
+        menu_help.addAction(act_tuts)
+        
+        menu_help.addSeparator()
+        
+        act_about = QAction("About VSLM", self)
+        act_about.triggered.connect(self.on_about)
+        menu_help.addAction(act_about)
 
     def _init_ui(self):
         central = QWidget()
@@ -167,8 +196,6 @@ class MainWindow(QMainWindow):
         self.btn_analyze.setEnabled(False)
         left_layout.addWidget(self.btn_analyze)
         
-        # Removed the Export Button from layout (moved to Menu)
-        
         main_layout.addWidget(left_panel)
         
         # --- RIGHT PANEL ---
@@ -177,7 +204,6 @@ class MainWindow(QMainWindow):
 
     def _apply_settings_to_ui(self):
         """Applies loaded settings to UI widgets."""
-        # Weighting
         for btn in self.bg_weight.buttons():
             if btn.text() == self.settings.weighting:
                 btn.setChecked(True)
@@ -185,7 +211,6 @@ class MainWindow(QMainWindow):
         else:
             self.bg_weight.button(0).setChecked(True)
 
-        # Speed
         for btn in self.bg_speed.buttons():
             if btn.text() == self.settings.speed:
                 btn.setChecked(True)
@@ -193,11 +218,8 @@ class MainWindow(QMainWindow):
         else:
             self.bg_speed.button(1).setChecked(True) 
 
-        # Mode & LEQ
         self.bg_mode.button(self.settings.analysis_mode_index).setChecked(True)
         self.combo_leq_int.setCurrentIndex(self.settings.leq_interval_index)
-
-        # Sync Calibration
         self.cal_factor = self.settings.calibration_factor
         self._update_file_info_label()
 
@@ -244,8 +266,14 @@ class MainWindow(QMainWindow):
             self.status_bar.showMessage(f"Settings saved to {Path(fname).name}")
 
     def on_action_save_figure(self):
-        """Placeholder for Save Figure."""
         QMessageBox.information(self, "Not Implemented", "Save Plot functionality coming soon.")
+
+    def on_open_url(self, url):
+        QDesktopServices.openUrl(QUrl(url))
+
+    def on_about(self):
+        dlg = AboutDialog(self)
+        dlg.exec()
 
     # --- Main Actions ---
 
@@ -268,7 +296,9 @@ class MainWindow(QMainWindow):
                 
                 self.btn_select.setEnabled(True)
                 self.btn_analyze.setEnabled(True)
-                self.menu_export.setEnabled(False) # Disable menu export on new file
+                self.menu_export.setEnabled(False)
+                # Reset Unsaved Data flag when loading new file
+                self.has_unsaved_data = False 
                 self.status_bar.showMessage("File loaded.")
             except Exception as e:
                 QMessageBox.critical(self, "Error", str(e))
@@ -386,7 +416,10 @@ class MainWindow(QMainWindow):
             filtered = results
             
         self.last_results = filtered
-        self.menu_export.setEnabled(True) # Enable export menu
+        # Mark as UNSAVED since we have fresh results
+        self.has_unsaved_data = True
+        
+        self.menu_export.setEnabled(True)
 
         self._plot_results(filtered, mode_id, weighting, speed)
         self.status_bar.showMessage("Analysis Complete.")
@@ -410,36 +443,58 @@ class MainWindow(QMainWindow):
         self.plot_panel.draw()
 
     def on_export_csv(self):
-        if not self.last_results: return
+            if not self.last_results: return
 
-        default_name = self.filepath.stem + "_results.csv" if self.filepath else "results.csv"
-        path_str, _ = QFileDialog.getSaveFileName(self, "Export CSV", default_name, "CSV Files (*.csv)")
-        if not path_str: return
-        out_path = Path(path_str)
-        
-        w_btn = self.bg_weight.checkedButton()
-        weighting = w_btn.text() if w_btn else 'A'
-        s_btn = self.bg_speed.checkedButton()
-        speed = s_btn.text() if s_btn else 'Fast'
-        mode_id = self.bg_mode.checkedId()
-        
-        try:
-            match mode_id:
-                case 1:
-                    interval_txt = self.combo_leq_int.currentText()
-                    ResultsExporter.export_leq(out_path, self.last_results, self.block_size_ms, interval_txt, weighting)
-                case 0:
-                    ResultsExporter.export_lp(out_path, self.last_results, weighting, speed)
-                case 2 | 3:
-                    ResultsExporter.export_spectrum(out_path, self.last_results, weighting)
+            default_name = self.filepath.stem + "_results.csv" if self.filepath else "results.csv"
+            path_str, _ = QFileDialog.getSaveFileName(self, "Export CSV", default_name, "CSV Files (*.csv)")
+            if not path_str: return
+            out_path = Path(path_str)
             
-            self.status_bar.showMessage(f"Exported to {out_path.name}")
-            QMessageBox.information(self, "Export Successful", f"Data saved to:\n{out_path}")
-        except Exception as e:
-            QMessageBox.critical(self, "Export Failed", str(e))
+            w_btn = self.bg_weight.checkedButton()
+            weighting = w_btn.text() if w_btn else 'A'
+            s_btn = self.bg_speed.checkedButton()
+            speed = s_btn.text() if s_btn else 'Fast'
+            mode_id = self.bg_mode.checkedId()
+            
+            # Retrieve Settings
+            cur_std = self.settings.current_dose_standard
+            dose_params = self.settings.dose_standards.get(cur_std)
+            ref_pressure = self.settings.ref_pressure
+
+            try:
+                match mode_id:
+                    case 1: # LEQ
+                        interval_txt = self.combo_leq_int.currentText()
+                        ResultsExporter.export_leq(
+                            out_path, 
+                            self.last_results, 
+                            self.block_size_ms, 
+                            interval_txt, 
+                            weighting,
+                            dose_params,   # Passed
+                            ref_pressure   # Passed
+                        )
+                    case 0: # Lp
+                        ResultsExporter.export_lp(out_path, self.last_results, weighting, speed)
+                    case 2 | 3: # Spectrum
+                        ResultsExporter.export_spectrum(
+                            out_path, 
+                            self.last_results, 
+                            weighting,
+                            ref_pressure   # Passed
+                        )
+                
+                # Export Successful: Mark as SAVED
+                self.has_unsaved_data = False
+                
+                self.status_bar.showMessage(f"Exported to {out_path.name}")
+                QMessageBox.information(self, "Export Successful", f"Data saved to:\n{out_path}")
+            except Exception as e:
+                QMessageBox.critical(self, "Export Failed", str(e))
 
     def closeEvent(self, event):
-        """Save settings (to default) and ensure threads stop on exit."""
+        """Save settings and check for unsaved data on exit."""
+        # 1. Thread Safety Check
         if self.worker is not None and self.worker.isRunning():
             reply = QMessageBox.question(
                 self, 'Analysis Running',
@@ -453,9 +508,20 @@ class MainWindow(QMainWindow):
                 event.ignore()
                 return
 
-        # Save current state to the default persistent file
+        # 2. Unsaved Data Check
+        if self.has_unsaved_data:
+            reply = QMessageBox.question(
+                self, 'Unsaved Results',
+                "There may be unsaved analysis results.\nAre you sure you want to quit?",
+                QMessageBox.Yes | QMessageBox.No, QMessageBox.No
+            )
+            if reply == QMessageBox.No:
+                event.ignore()
+                return
+
+        # 3. Save Settings
         self._scrape_ui_to_settings()
-        self.settings_mgr.save(self.settings) # Uses default path
+        self.settings_mgr.save(self.settings) 
         
         event.accept()
 

@@ -1,4 +1,3 @@
-# python2/vslm/export.py
 import csv
 from pathlib import Path
 import numpy as np
@@ -22,9 +21,12 @@ class ResultsExporter:
                 writer.writerow([f"{r['time']:.3f}", f"{r['lp']:.2f}"])
 
     @staticmethod
-    def export_leq(filepath: Path, results: list, block_size_ms: float, interval_txt: str, weighting: str):
+    def export_leq(filepath: Path, results: list, block_size_ms: float, 
+                   interval_txt: str, weighting: str,
+                   dose_params: dict, ref_pressure: float): # Updated Signature
         """Exports integrated LEQ history based on the selected interval."""
-        # Map text to seconds (matching logic in GUI)
+        
+        # Map text to seconds
         match interval_txt:
             case "100 ms": interval = 0.1
             case "1 sec": interval = 1.0
@@ -34,12 +36,16 @@ class ResultsExporter:
             case "1 hour": interval = 3600.0
             case _: interval = 1.0
 
-        # Calculate stats to get aggregated history
-        stats = leq.calculate_leq_analysis(results, block_size_ms, interval)
+        # Calculate stats (Now passing the required args)
+        stats = leq.calculate_leq_analysis(
+            results, block_size_ms, interval, dose_params, ref_pressure
+        )
         
         with open(filepath, 'w', newline='') as f:
             writer = csv.writer(f)
-            writer.writerow(["Start Time (s)", f"LEQ ({weighting}, {interval_txt} interval) [dB]"])
+            # Add a metadata header
+            writer.writerow(["# VSLM Export", f"Weighting: {weighting}", f"Interval: {interval_txt}"])
+            writer.writerow(["Start Time (s)", f"LEQ [dB]"])
             
             times = stats.history['time']
             levels = stats.history['leq']
@@ -48,7 +54,7 @@ class ResultsExporter:
                 writer.writerow([f"{t:.2f}", f"{l:.2f}"])
 
     @staticmethod
-    def export_spectrum(filepath: Path, results: list, weighting: str):
+    def export_spectrum(filepath: Path, results: list, weighting: str, ref_pressure: float):
         """Exports the time-averaged spectrum."""
         if not results: return
         
@@ -62,18 +68,20 @@ class ResultsExporter:
         energy_sums = np.zeros(len(freqs))
         count = len(results)
         for r in results:
-            # Convert dB back to Pressure^2
-            pressures = (10**(r['bands']/10.0)) * (20e-6**2)
+            # Convert dB back to Pressure^2 using Ref Pressure
+            pressures = (10**(r['bands']/10.0)) * (ref_pressure**2)
             energy_sums += pressures
         
         if count > 0:
             mean_pressure_sq = energy_sums / count
-            mean_db = 10 * np.log10(mean_pressure_sq / (20e-6**2) + 1e-30)
+            # Convert back to dB using Ref Pressure
+            mean_db = 10 * np.log10(mean_pressure_sq / (ref_pressure**2) + 1e-30)
         else:
             mean_db = np.zeros(len(freqs))
             
         with open(filepath, 'w', newline='') as f:
             writer = csv.writer(f)
-            writer.writerow(["Frequency (Hz)", f"Average Level ({weighting}) [dB]"])
+            writer.writerow(["# VSLM Export", f"Spectrum ({weighting})"])
+            writer.writerow(["Frequency (Hz)", f"Average Level [dB]"])
             for freq, level in zip(freqs, mean_db):
                 writer.writerow([f"{freq:.1f}", f"{level:.2f}"])

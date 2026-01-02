@@ -1,14 +1,15 @@
 # python2/vslm/gui/main.py
 import sys
 import os
+import numpy as np
 from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, 
                                QHBoxLayout, QPushButton, QLabel, QGroupBox, 
                                QFileDialog, QMessageBox, QFrame, QButtonGroup, 
-                               QRadioButton, QProgressBar)
+                               QRadioButton, QProgressBar, QComboBox)
 from PySide6.QtCore import Qt
 
-# Imports
 from ..analysis_engine import StreamProcessor
+from .. import leq
 from .waveform import WaveformDialog
 from .widgets import MatplotlibWidget
 
@@ -16,53 +17,49 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("VSLM 2.0 (Python)")
-        self.resize(1100, 750)
+        self.resize(1150, 800)
         
-        # State
         self.filepath = None
         self.start_time = 0.0
-        self.end_time = None # None means end of file
+        self.end_time = None
         self.cal_factor = 1.0
-        self.block_size_ms = 100 # Default Analysis Block Size
+        self.block_size_ms = 100 
         
-        # UI Setup
         self._init_ui()
         self.status_bar = self.statusBar()
         self.status_bar.showMessage("Ready. Load a file to begin.")
 
     def _init_ui(self):
-        # Main Widget
         central = QWidget()
         self.setCentralWidget(central)
         main_layout = QHBoxLayout(central)
         
-        # --- LEFT PANEL (Controls) ---
+        # --- LEFT PANEL ---
         left_panel = QWidget()
-        left_panel.setFixedWidth(300)
+        left_panel.setFixedWidth(320)
         left_layout = QVBoxLayout(left_panel)
         
-        # 1. File Group
+        # 1. File
         grp_file = QGroupBox("File & Selection")
         layout_file = QVBoxLayout()
-        
         self.btn_load = QPushButton("Load WAV File")
         self.btn_load.clicked.connect(self.on_load_file)
-        
         self.btn_select = QPushButton("Select File Section")
         self.btn_select.clicked.connect(self.on_select_section)
-        self.btn_select.setEnabled(False) # Disabled until file loaded
-        
+        self.btn_select.setEnabled(False)
+        self.lbl_info_header = QLabel("File Info")
+        self.lbl_info_header.setStyleSheet("font-weight: bold; font-size: 10px; margin-top: 5px;")
         self.lbl_info = QLabel("No File Loaded")
         self.lbl_info.setFrameStyle(QFrame.StyledPanel | QFrame.Sunken)
-        self.lbl_info.setWordWrap(True)
-        
+        self.lbl_info.setStyleSheet("padding: 3px;")
         layout_file.addWidget(self.btn_load)
         layout_file.addWidget(self.btn_select)
+        layout_file.addWidget(self.lbl_info_header)
         layout_file.addWidget(self.lbl_info)
         grp_file.setLayout(layout_file)
         left_layout.addWidget(grp_file)
         
-        # 2. Settings Group (Weighting)
+        # 2. Weighting
         grp_weight = QGroupBox("Weighting")
         layout_weight = QHBoxLayout()
         self.bg_weight = QButtonGroup()
@@ -74,11 +71,12 @@ class MainWindow(QMainWindow):
         grp_weight.setLayout(layout_weight)
         left_layout.addWidget(grp_weight)
         
-        # 3. Settings Group (Speed)
-        grp_speed = QGroupBox("Speed")
+        # 3. Speed (UPDATED with IMPULSE)
+        grp_speed = QGroupBox("Speed (Lp Mode)")
         layout_speed = QHBoxLayout()
         self.bg_speed = QButtonGroup()
-        for i, text in enumerate(['Slow', 'Fast']):
+        # Added Impulse to the list
+        for i, text in enumerate(['Slow', 'Fast', 'Impulse']):
             rb = QRadioButton(text)
             if text == 'Fast': rb.setChecked(True)
             self.bg_speed.addButton(rb, i)
@@ -86,11 +84,11 @@ class MainWindow(QMainWindow):
         grp_speed.setLayout(layout_speed)
         left_layout.addWidget(grp_speed)
         
-        # 4. Mode Group
+        # 4. Mode
         grp_mode = QGroupBox("Analysis Mode")
         layout_mode = QVBoxLayout()
         self.bg_mode = QButtonGroup()
-        modes = ["Level vs Time", "Leq", "Octave Bands", "1/3 Octave Bands"]
+        modes = ["Level vs Time (Lp)", "LEQ Analysis", "Octave Bands", "1/3 Octave Bands"]
         for i, m in enumerate(modes):
             rb = QRadioButton(m)
             if i == 0: rb.setChecked(True)
@@ -99,21 +97,25 @@ class MainWindow(QMainWindow):
         grp_mode.setLayout(layout_mode)
         left_layout.addWidget(grp_mode)
         
+        # 5. LEQ Settings
+        grp_leq = QGroupBox("LEQ Settings")
+        layout_leq = QHBoxLayout()
+        layout_leq.addWidget(QLabel("Plot Interval:"))
+        self.combo_leq_int = QComboBox()
+        self.combo_leq_int.addItems(["1 sec", "10 sec", "1 min", "15 min", "1 hour"])
+        layout_leq.addWidget(self.combo_leq_int)
+        grp_leq.setLayout(layout_leq)
+        left_layout.addWidget(grp_leq)
+        
         left_layout.addStretch()
         
-        # --- NEW: Progress Bar ---
         self.progress = QProgressBar()
         self.progress.setRange(0, 100)
         self.progress.setValue(0)
-        self.progress.setTextVisible(False) # Minimal look
-        # Optional styling
-        self.progress.setStyleSheet("""
-            QProgressBar { height: 10px; border: 1px solid grey; border-radius: 2px; } 
-            QProgressBar::chunk { background-color: #3b82f6; }
-        """)
+        self.progress.setTextVisible(False)
+        self.progress.setStyleSheet("QProgressBar { height: 10px; border: 1px solid grey; } QProgressBar::chunk { background-color: #3b82f6; }")
         left_layout.addWidget(self.progress)
         
-        # 5. Analyze Button
         self.btn_analyze = QPushButton("ANALYZE")
         self.btn_analyze.setStyleSheet("font-weight: bold; font-size: 14px; height: 40px; background-color: #dbeafe;")
         self.btn_analyze.clicked.connect(self.on_analyze)
@@ -122,30 +124,22 @@ class MainWindow(QMainWindow):
         
         main_layout.addWidget(left_panel)
         
-        # --- RIGHT PANEL (Results) ---
         self.plot_panel = MatplotlibWidget()
         main_layout.addWidget(self.plot_panel, stretch=1)
 
     # --- Actions ---
-
     def on_load_file(self):
         fname, _ = QFileDialog.getOpenFileName(self, "Open WAV", "", "WAV Files (*.wav)")
         if fname:
             self.filepath = fname
             self.start_time = 0.0
-            
-            # Get info
             try:
                 from soundfile import info
                 inf = info(fname)
                 self.end_time = inf.duration
-                
-                # Update Info Label with Block Size
                 self.lbl_info.setText(f"File: {os.path.basename(fname)}\n"
                                       f"Fs: {inf.samplerate} Hz\n"
-                                      f"Dur: {inf.duration:.2f} s\n"
-                                      f"Block: {self.block_size_ms} ms")
-                
+                                      f"Dur: {inf.duration:.1f} s   Block Size: {self.block_size_ms} ms")
                 self.btn_select.setEnabled(True)
                 self.btn_analyze.setEnabled(True)
                 self.status_bar.showMessage("File loaded.")
@@ -154,33 +148,30 @@ class MainWindow(QMainWindow):
 
     def on_select_section(self):
         if not self.filepath: return
-        
         dlg = WaveformDialog(self.filepath, self)
-        
         if self.end_time:
             dlg.viewer.region.setRegion([self.start_time, self.end_time])
-            
         if dlg.exec():
             s, e = dlg.get_selection()
             self.start_time = s
             self.end_time = e
-            
-            current_text = self.lbl_info.text().split("\nSelection:")[0]
-            self.lbl_info.setText(f"{current_text}\nSelection: {s:.2f}s - {e:.2f}s")
+            curr = self.lbl_info.text().split("\nSelection:")[0]
+            self.lbl_info.setText(f"{curr}\nSelection: {s:.2f}s - {e:.2f}s")
 
     def on_analyze(self):
         if not self.filepath: return
         
-        # Gather Settings
         w_btn = self.bg_weight.checkedButton()
         weighting = w_btn.text() if w_btn else 'A'
+        
+        s_btn = self.bg_speed.checkedButton()
+        speed = s_btn.text() if s_btn else 'Fast'
+        
         mode_id = self.bg_mode.checkedId() 
         
-        self.status_bar.showMessage("Analyzing...")
+        self.status_bar.showMessage(f"Analyzing ({speed})...")
         self.btn_analyze.setEnabled(False) 
         self.progress.setValue(0)
-        
-        # Force UI repaint before heavy loop
         QApplication.processEvents() 
         
         try:
@@ -189,90 +180,115 @@ class MainWindow(QMainWindow):
             do_bands = (mode_id >= 2)
             res = 'octave' if mode_id == 2 else 'third'
             
-            # 1. Calculate Total Blocks for Progress
-            # We assume processing the whole file (engine default) for now
             total_blocks = int(processor.duration * 1000 / self.block_size_ms)
             self.progress.setRange(0, total_blocks)
             
-            # 2. Initialize Generator
-            gen = processor.run_analysis(
-                block_size_ms=self.block_size_ms, 
-                weighting=weighting,
-                do_band_analysis=do_bands,
-                band_resolution=res
-            )
+            # Pass speed to engine
+            gen = processor.run_analysis(self.block_size_ms, weighting, do_bands, res, 24, speed)
             
             results = []
-            
-            # 3. Iterate and Update Progress
             for i, block in enumerate(gen):
                 results.append(block)
-                
-                # Update progress bar
-                self.progress.setValue(i + 1)
-                
-                # Allow GUI to update (prevent freezing)
-                QApplication.processEvents()
+                if i % 10 == 0: 
+                    self.progress.setValue(i + 1)
+                    QApplication.processEvents()
+            self.progress.setValue(total_blocks)
             
-            # Filter results by time selection
-            filtered_results = [
-                r for r in results 
-                if self.start_time <= r['time'] <= self.end_time
-            ]
+            filtered = [r for r in results if self.start_time <= r['time'] <= self.end_time]
             
-            self._plot_results(filtered_results, mode_id, weighting)
+            self._plot_results(filtered, mode_id, weighting, speed)
             self.status_bar.showMessage("Analysis Complete.")
             
         except Exception as e:
             QMessageBox.critical(self, "Analysis Failed", str(e))
-            self.status_bar.showMessage("Error.")
         finally:
             self.btn_analyze.setEnabled(True)
 
-    def _plot_results(self, results, mode_id, weighting):
-        self.plot_panel.reset()
-        ax = self.plot_panel.ax
+    def _plot_results(self, results, mode_id, weighting, speed):
+        fig = self.plot_panel.figure
+        fig.clear()
         
-        if not results: return
+        if not results: 
+            self.plot_panel.draw()
+            return
 
-        if mode_id == 0: # Level vs Time
-            times = [r['time'] for r in results]
-            levels = [r['leq'] for r in results]
-            ax.plot(times, levels)
-            ax.set_title(f"Level vs Time ({weighting}-Weighted)")
+        # --- LEQ MODE (Split Screen) ---
+        if mode_id == 1:
+            int_txt = self.combo_leq_int.currentText()
+            map_int = {"1 sec": 1, "10 sec": 10, "1 min": 60, "15 min": 900, "1 hour": 3600}
+            interval = map_int.get(int_txt, 1.0)
+            
+            stats = leq.calculate_leq_analysis(results, self.block_size_ms, interval)
+            
+            ax1 = fig.add_subplot(2, 1, 1)
+            if len(stats.history['time']) > 0:
+                t_plot = list(stats.history['time'])
+                t_plot.append(t_plot[-1] + interval)
+                l_plot = list(stats.history['leq'])
+                l_plot.append(l_plot[-1])
+                ax1.step(t_plot, l_plot, where='post', color='b', linewidth=1.5)
+            
+            ax1.set_title(f"LEQ History ({int_txt} interval, {weighting}-weighted)")
+            ax1.set_ylabel("LEQ (dB)")
+            ax1.grid(True)
+            
+            ax2 = fig.add_subplot(2, 1, 2)
+            ax2.axis('off')
+            col1_x, col2_x, col3_x = 0.05, 0.35, 0.65
+            
+            ax2.text(0.5, 0.95, f"Overall LEQ: {stats.overall:.1f} dB", 
+                     ha='center', fontsize=14, fontweight='bold', color='blue')
+            ax2.text(col1_x, 0.80, f"Lmax: {stats.max:.1f} dB")
+            ax2.text(col1_x, 0.65, f"Lmin: {stats.min:.1f} dB")
+            ax2.text(col1_x, 0.50, f"L10: {stats.ln[10]:.1f} dB")
+            ax2.text(col1_x, 0.35, f"L50: {stats.ln[50]:.1f} dB")
+            ax2.text(col1_x, 0.20, f"L90: {stats.ln[90]:.1f} dB")
+            ax2.text(col2_x, 0.80, f"L20: {stats.ln[20]:.1f} dB")
+            ax2.text(col2_x, 0.65, f"L30: {stats.ln[30]:.1f} dB")
+            ax2.text(col2_x, 0.50, f"L40: {stats.ln[40]:.1f} dB")
+            ax2.text(col2_x, 0.35, f"L60: {stats.ln[60]:.1f} dB")
+            ax2.text(col2_x, 0.20, f"L80: {stats.ln[80]:.1f} dB")
+            ax2.text(col3_x, 0.80, f"Dose ({stats.dose['standard']})", fontweight='bold')
+            ax2.text(col3_x, 0.65, f"Dose %: {stats.dose['dose']:.1f}%")
+            ax2.text(col3_x, 0.50, f"TWA: {stats.dose['twa']:.1f} dB")
+            fig.tight_layout()
+
+        # --- LEVEL VS TIME (Lp) ---
+        elif mode_id == 0:
+            ax = fig.add_subplot(1, 1, 1)
+            t = [r['time'] for r in results]
+            
+            # UPDATED: Use 'lp' (Time Weighted) instead of 'leq'
+            # The engine now returns 'lp' based on the Speed setting.
+            l = [r['lp'] for r in results]
+            
+            ax.plot(t, l)
+            ax.set_title(f"Sound Pressure Level vs Time ({weighting}-weighted, {speed})")
             ax.set_xlabel("Time (s)")
             ax.set_ylabel("Level (dB)")
             ax.grid(True)
-            
-        elif mode_id == 2 or mode_id == 3: # Bands
-            import numpy as np
-            
+
+        # --- SPECTRAL ---
+        elif mode_id == 2 or mode_id == 3:
+            ax = fig.add_subplot(1, 1, 1)
             freqs = results[0]['band_freqs']
-            n_bands = len(freqs)
-            energy_sums = np.zeros(n_bands)
-            
+            energy_sums = np.zeros(len(freqs))
             for r in results:
-                levels = r['bands']
-                pressures = (10**(levels/10.0)) * (20e-6**2)
+                pressures = (10**(r['bands']/10.0)) * (20e-6**2)
                 energy_sums += pressures
-                
-            mean_pressure = energy_sums / len(results)
-            mean_db = 10 * np.log10(mean_pressure / (20e-6**2) + 1e-30)
+            mean_db = 10 * np.log10((energy_sums / len(results)) / (20e-6**2) + 1e-30)
             
             x = np.arange(len(freqs))
-            ax.bar(x, mean_db)
+            ax.bar(x, mean_db, color='#2ca02c', alpha=0.8)
             ax.set_xticks(x)
-            
             lbls = []
             for f in freqs:
                 if f >= 1000: lbls.append(f"{f/1000:.0f}k")
                 else: lbls.append(f"{f:.0f}")
-            
-            if mode_id == 3:
+            if mode_id == 3: 
                 lbls = [l if i%3==0 else "" for i, l in enumerate(lbls)]
-                
             ax.set_xticklabels(lbls, rotation=90)
-            ax.set_title("Average Spectrum")
+            ax.set_title(f"Average Spectrum ({weighting}-weighted)")
             ax.set_ylabel("Level (dB)")
             ax.grid(axis='y')
 

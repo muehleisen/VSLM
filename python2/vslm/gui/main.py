@@ -1,6 +1,4 @@
-# python2/vslm/gui/main.py
 import sys
-import os
 import numpy as np
 from pathlib import Path
 from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, 
@@ -9,10 +7,11 @@ from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
                                QRadioButton, QProgressBar, QComboBox)
 from PySide6.QtCore import Qt
 
-from ..analysis_engine import StreamProcessor
+# Imports
 from .. import leq
 from .waveform import WaveformDialog
 from .widgets import MatplotlibWidget
+from .workers import AnalysisWorker
 
 class MainWindow(QMainWindow):
     def __init__(self):
@@ -27,13 +26,14 @@ class MainWindow(QMainWindow):
         self.cal_factor: float = 1.0
         self.block_size_ms: float = 100.0
         
+        # Worker Reference
+        self.worker: AnalysisWorker | None = None
+        
         self._init_ui()
         self.status_bar = self.statusBar()
         self.status_bar.showMessage("Ready. Load a file to begin.")
 
     def _init_ui(self):
-        # ... (UI Setup code is mostly boilerplate, sticking to existing structure for brevity) ...
-        # (Assuming the exact same UI setup code as before, just updating logic below)
         central = QWidget()
         self.setCentralWidget(central)
         main_layout = QHBoxLayout(central)
@@ -42,6 +42,7 @@ class MainWindow(QMainWindow):
         left_panel = QWidget()
         left_panel.setFixedWidth(320)
         left_layout = QVBoxLayout(left_panel)
+        self.left_panel = left_panel 
         
         # 1. File Group
         grp_file = QGroupBox("File & Selection")
@@ -122,7 +123,7 @@ class MainWindow(QMainWindow):
         
         self.btn_analyze = QPushButton("ANALYZE")
         self.btn_analyze.setStyleSheet("font-weight: bold; font-size: 14px; height: 40px; background-color: #dbeafe;")
-        self.btn_analyze.clicked.connect(self.on_analyze)
+        self.btn_analyze.clicked.connect(self.on_analyze_click)
         self.btn_analyze.setEnabled(False)
         left_layout.addWidget(self.btn_analyze)
         
@@ -131,6 +132,8 @@ class MainWindow(QMainWindow):
         # --- RIGHT PANEL ---
         self.plot_panel = MatplotlibWidget()
         main_layout.addWidget(self.plot_panel, stretch=1)
+
+    # --- Actions ---
 
     def on_load_file(self):
         fname, _ = QFileDialog.getOpenFileName(self, "Open WAV", "", "WAV Files (*.wav)")
@@ -162,7 +165,23 @@ class MainWindow(QMainWindow):
             curr = self.lbl_info.text().split("\nSelection:")[0]
             self.lbl_info.setText(f"{curr}\nSelection: {s:.2f}s - {e:.2f}s")
 
-    def on_analyze(self):
+    def toggle_inputs(self, enabled: bool):
+        self.btn_load.setEnabled(enabled)
+        self.btn_select.setEnabled(enabled)
+        self.combo_leq_int.setEnabled(enabled)
+        for child in self.left_panel.findChildren(QGroupBox):
+             if child.title() != "File & Selection": 
+                 child.setEnabled(enabled)
+
+    def on_analyze_click(self):
+        # 1. Handle Stop Request
+        if self.worker is not None:
+            self.status_bar.showMessage("Stopping...")
+            self.worker.stop()
+            self.btn_analyze.setEnabled(False)
+            return
+
+        # 2. Handle Start Request
         if not self.filepath: return
         
         w_btn = self.bg_weight.checkedButton()
@@ -171,50 +190,68 @@ class MainWindow(QMainWindow):
         s_btn = self.bg_speed.checkedButton()
         speed = s_btn.text() if s_btn else 'Fast'
         
-        mode_id = self.bg_mode.checkedId() 
+        mode_id = self.bg_mode.checkedId()
+        match mode_id:
+            case 2:
+                do_bands = True
+                res = 'octave'
+            case 3:
+                do_bands = True
+                res = 'third'
+            case _:
+                do_bands = False
+                res = 'octave'
         
-        self.status_bar.showMessage(f"Analyzing ({speed})...")
-        self.btn_analyze.setEnabled(False) 
+        self.toggle_inputs(False)
+        self.btn_analyze.setText("STOP")
+        self.btn_analyze.setStyleSheet("font-weight: bold; font-size: 14px; height: 40px; background-color: #fca5a5;")
         self.progress.setValue(0)
-        QApplication.processEvents() 
+        self.status_bar.showMessage(f"Analyzing ({speed})...")
         
-        try:
-            processor = StreamProcessor(self.filepath, cal_factor=self.cal_factor)
-            
-            # Use match to determine analysis parameters
-            match mode_id:
-                case 2: # Octave
-                    do_bands = True
-                    res = 'octave'
-                case 3: # 1/3 Octave
-                    do_bands = True
-                    res = 'third'
-                case _:
-                    do_bands = False
-                    res = 'octave'
-            
-            total_blocks = int(processor.duration * 1000 / self.block_size_ms)
-            self.progress.setRange(0, total_blocks)
-            
-            gen = processor.run_analysis(self.block_size_ms, weighting, do_bands, res, 24, speed)
-            
-            results = []
-            for i, block in enumerate(gen):
-                results.append(block)
-                if i % 10 == 0: 
-                    self.progress.setValue(i + 1)
-                    QApplication.processEvents()
-            self.progress.setValue(total_blocks)
-            
+        self.worker = AnalysisWorker(
+            self.filepath, 
+            self.cal_factor, 
+            self.block_size_ms,
+            weighting,
+            do_bands,
+            res,
+            speed
+        )
+        
+        self.worker.sig_total_blocks.connect(self.progress.setMaximum)
+        self.worker.sig_progress.connect(self.progress.setValue)
+        self.worker.sig_finished.connect(lambda res: self.on_analysis_finished(res, mode_id, weighting, speed))
+        self.worker.sig_error.connect(self.on_analysis_error)
+        self.worker.finished.connect(self.on_worker_stopped)
+        
+        # Clean up C++ resources immediately upon thread completion
+        self.worker.finished.connect(self.worker.deleteLater)
+        
+        self.worker.start()
+
+    def on_worker_stopped(self):
+        """Cleanup after thread exit."""
+        self.worker = None
+        self.toggle_inputs(True)
+        self.btn_analyze.setText("ANALYZE")
+        self.btn_analyze.setStyleSheet("font-weight: bold; font-size: 14px; height: 40px; background-color: #dbeafe;")
+        self.btn_analyze.setEnabled(True)
+        self.progress.setValue(0) # Clear progress bar
+
+    def on_analysis_error(self, msg):
+        QMessageBox.critical(self, "Analysis Error", msg)
+        self.status_bar.showMessage("Error occurred.")
+
+    def on_analysis_finished(self, results, mode_id, weighting, speed):
+        self.status_bar.showMessage("Processing Results...")
+        
+        if self.end_time:
             filtered = [r for r in results if self.start_time <= r['time'] <= self.end_time]
-            
-            self._plot_results(filtered, mode_id, weighting, speed)
-            self.status_bar.showMessage("Analysis Complete.")
-            
-        except Exception as e:
-            QMessageBox.critical(self, "Analysis Failed", str(e))
-        finally:
-            self.btn_analyze.setEnabled(True)
+        else:
+            filtered = results
+
+        self._plot_results(filtered, mode_id, weighting, speed)
+        self.status_bar.showMessage("Analysis Complete.")
 
     def _plot_results(self, results: list, mode_id: int, weighting: str, speed: str):
         fig = self.plot_panel.figure
@@ -225,8 +262,7 @@ class MainWindow(QMainWindow):
             return
 
         match mode_id:
-            case 1: # LEQ MODE (Split Screen)
-                # Parse interval string using match
+            case 1: # LEQ MODE
                 int_txt = self.combo_leq_int.currentText()
                 match int_txt:
                     case "1 sec": interval = 1.0
@@ -238,7 +274,6 @@ class MainWindow(QMainWindow):
                 
                 stats = leq.calculate_leq_analysis(results, self.block_size_ms, interval)
                 
-                # Top Plot (Step)
                 ax1 = fig.add_subplot(2, 1, 1)
                 if len(stats.history['time']) > 0:
                     t_plot = list(stats.history['time'])
@@ -251,7 +286,6 @@ class MainWindow(QMainWindow):
                 ax1.set_ylabel("LEQ (dB)")
                 ax1.grid(True)
                 
-                # Bottom Stats (Text)
                 ax2 = fig.add_subplot(2, 1, 2)
                 ax2.axis('off')
                 col1, col2, col3 = 0.05, 0.35, 0.65
@@ -273,7 +307,7 @@ class MainWindow(QMainWindow):
                 ax2.text(col3, 0.50, f"TWA: {stats.dose['twa']:.1f} dB")
                 fig.tight_layout()
 
-            case 0: # LEVEL VS TIME (Lp)
+            case 0: # LEVEL VS TIME
                 ax = fig.add_subplot(1, 1, 1)
                 t = [r['time'] for r in results]
                 l = [r['lp'] for r in results]
@@ -283,7 +317,7 @@ class MainWindow(QMainWindow):
                 ax.set_ylabel("Level (dB)")
                 ax.grid(True)
 
-            case 2 | 3: # SPECTRAL (Octave or Third)
+            case 2 | 3: # SPECTRAL
                 ax = fig.add_subplot(1, 1, 1)
                 freqs = results[0]['band_freqs']
                 energy_sums = np.zeros(len(freqs))
@@ -307,6 +341,29 @@ class MainWindow(QMainWindow):
                 ax.grid(axis='y')
 
         self.plot_panel.draw()
+
+    def closeEvent(self, event):
+        """
+        Graceful shutdown: Prevent zombie threads if user closes window during analysis.
+        """
+        if self.worker is not None and self.worker.isRunning():
+            reply = QMessageBox.question(
+                self, 
+                'Analysis Running',
+                "An analysis is currently running.\nDo you want to stop it and exit?",
+                QMessageBox.Yes | QMessageBox.No, 
+                QMessageBox.No
+            )
+
+            if reply == QMessageBox.Yes:
+                self.status_bar.showMessage("Stopping background thread...")
+                self.worker.stop()
+                self.worker.wait() # Block until thread cleanly exits
+                event.accept()
+            else:
+                event.ignore()
+        else:
+            event.accept()
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)

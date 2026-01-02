@@ -1,3 +1,4 @@
+# python2/vslm/gui/main.py
 import sys
 import numpy as np
 from pathlib import Path
@@ -10,6 +11,7 @@ from PySide6.QtCore import Qt
 # Imports
 from .. import leq
 from .waveform import WaveformDialog
+from .calibration_dialog import CalibrationDialog
 from .widgets import MatplotlibWidget
 from .workers import AnalysisWorker
 
@@ -23,7 +25,7 @@ class MainWindow(QMainWindow):
         self.filepath: Path | None = None
         self.start_time: float = 0.0
         self.end_time: float | None = None
-        self.cal_factor: float = 1.0
+        self.cal_factor: float = 1.0 # Default Linear Factor
         self.block_size_ms: float = 100.0
         
         # Worker Reference
@@ -52,13 +54,21 @@ class MainWindow(QMainWindow):
         self.btn_select = QPushButton("Select File Section")
         self.btn_select.clicked.connect(self.on_select_section)
         self.btn_select.setEnabled(False)
+        
+        # Calibration Button
+        self.btn_cal = QPushButton("Calibrate...")
+        self.btn_cal.clicked.connect(self.on_calibrate)
+        self.btn_cal.setStyleSheet("background-color: #f3f4f6;")
+        
         self.lbl_info_header = QLabel("File Info")
         self.lbl_info_header.setStyleSheet("font-weight: bold; font-size: 10px; margin-top: 5px;")
         self.lbl_info = QLabel("No File Loaded")
         self.lbl_info.setFrameStyle(QFrame.StyledPanel | QFrame.Sunken)
         self.lbl_info.setStyleSheet("padding: 3px;")
+        
         layout_file.addWidget(self.btn_load)
         layout_file.addWidget(self.btn_select)
+        layout_file.addWidget(self.btn_cal) 
         layout_file.addWidget(self.lbl_info_header)
         layout_file.addWidget(self.lbl_info)
         grp_file.setLayout(layout_file)
@@ -106,7 +116,10 @@ class MainWindow(QMainWindow):
         layout_leq = QHBoxLayout()
         layout_leq.addWidget(QLabel("Plot Interval:"))
         self.combo_leq_int = QComboBox()
-        self.combo_leq_int.addItems(["1 sec", "10 sec", "1 min", "15 min", "1 hour"])
+        # ADDED "100 ms"
+        self.combo_leq_int.addItems(["100 ms", "1 sec", "10 sec", "1 min", "15 min", "1 hour"])
+        # Set default to 1 sec (index 1) to match previous behavior
+        self.combo_leq_int.setCurrentIndex(1)
         layout_leq.addWidget(self.combo_leq_int)
         grp_leq.setLayout(layout_leq)
         left_layout.addWidget(grp_leq)
@@ -135,6 +148,20 @@ class MainWindow(QMainWindow):
 
     # --- Actions ---
 
+    def _update_file_info_label(self, inf=None):
+        if not self.filepath:
+            self.lbl_info.setText(f"No File Loaded\nCal Factor: {self.cal_factor:.4f}")
+            return
+            
+        if inf is None:
+            from soundfile import info
+            inf = info(str(self.filepath))
+            
+        self.lbl_info.setText(f"File: {self.filepath.name}\n"
+                              f"Fs: {inf.samplerate} Hz\n"
+                              f"Dur: {inf.duration:.1f} s   Block Size: {self.block_size_ms} ms\n"
+                              f"Cal Factor: {self.cal_factor:.4f}")
+
     def on_load_file(self):
         fname, _ = QFileDialog.getOpenFileName(self, "Open WAV", "", "WAV Files (*.wav)")
         if fname:
@@ -144,9 +171,8 @@ class MainWindow(QMainWindow):
                 from soundfile import info
                 inf = info(str(self.filepath))
                 self.end_time = inf.duration
-                self.lbl_info.setText(f"File: {self.filepath.name}\n"
-                                      f"Fs: {inf.samplerate} Hz\n"
-                                      f"Dur: {inf.duration:.1f} s   Block Size: {self.block_size_ms} ms")
+                self._update_file_info_label(inf)
+                
                 self.btn_select.setEnabled(True)
                 self.btn_analyze.setEnabled(True)
                 self.status_bar.showMessage("File loaded.")
@@ -162,26 +188,36 @@ class MainWindow(QMainWindow):
             s, e = dlg.get_selection()
             self.start_time = s
             self.end_time = e
+            
             curr = self.lbl_info.text().split("\nSelection:")[0]
             self.lbl_info.setText(f"{curr}\nSelection: {s:.2f}s - {e:.2f}s")
+
+    def on_calibrate(self):
+        start = self.start_time
+        end = self.end_time if self.end_time else 0.0
+        
+        dlg = CalibrationDialog(self.cal_factor, self.filepath, start, end, self)
+        if dlg.exec():
+            self.cal_factor = dlg.get_factor()
+            self._update_file_info_label()
+            self.status_bar.showMessage(f"Calibration updated: {self.cal_factor:.4f}")
 
     def toggle_inputs(self, enabled: bool):
         self.btn_load.setEnabled(enabled)
         self.btn_select.setEnabled(enabled)
+        self.btn_cal.setEnabled(enabled) 
         self.combo_leq_int.setEnabled(enabled)
         for child in self.left_panel.findChildren(QGroupBox):
              if child.title() != "File & Selection": 
                  child.setEnabled(enabled)
 
     def on_analyze_click(self):
-        # 1. Handle Stop Request
         if self.worker is not None:
             self.status_bar.showMessage("Stopping...")
             self.worker.stop()
             self.btn_analyze.setEnabled(False)
             return
 
-        # 2. Handle Start Request
         if not self.filepath: return
         
         w_btn = self.bg_weight.checkedButton()
@@ -220,23 +256,21 @@ class MainWindow(QMainWindow):
         
         self.worker.sig_total_blocks.connect(self.progress.setMaximum)
         self.worker.sig_progress.connect(self.progress.setValue)
+        
         self.worker.sig_finished.connect(lambda res: self.on_analysis_finished(res, mode_id, weighting, speed))
         self.worker.sig_error.connect(self.on_analysis_error)
         self.worker.finished.connect(self.on_worker_stopped)
-        
-        # Clean up C++ resources immediately upon thread completion
         self.worker.finished.connect(self.worker.deleteLater)
         
         self.worker.start()
 
     def on_worker_stopped(self):
-        """Cleanup after thread exit."""
         self.worker = None
         self.toggle_inputs(True)
         self.btn_analyze.setText("ANALYZE")
         self.btn_analyze.setStyleSheet("font-weight: bold; font-size: 14px; height: 40px; background-color: #dbeafe;")
         self.btn_analyze.setEnabled(True)
-        self.progress.setValue(0) # Clear progress bar
+        self.progress.setValue(0)
 
     def on_analysis_error(self, msg):
         QMessageBox.critical(self, "Analysis Error", msg)
@@ -265,6 +299,7 @@ class MainWindow(QMainWindow):
             case 1: # LEQ MODE
                 int_txt = self.combo_leq_int.currentText()
                 match int_txt:
+                    case "100 ms": interval = 0.1 # NEW MAPPING
                     case "1 sec": interval = 1.0
                     case "10 sec": interval = 10.0
                     case "1 min": interval = 60.0

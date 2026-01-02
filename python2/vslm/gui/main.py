@@ -1,19 +1,17 @@
 # python2/vslm/gui/main.py
 import sys
-import numpy as np
 from pathlib import Path
 from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, 
                                QHBoxLayout, QPushButton, QLabel, QGroupBox, 
                                QFileDialog, QMessageBox, QFrame, QButtonGroup, 
                                QRadioButton, QProgressBar, QComboBox)
-from PySide6.QtCore import Qt
 
 # Imports
-from .. import leq
 from .waveform import WaveformDialog
 from .calibration_dialog import CalibrationDialog
 from .widgets import MatplotlibWidget
 from .workers import AnalysisWorker
+from .plotter import ResultPlotter # New Import
 
 class MainWindow(QMainWindow):
     def __init__(self):
@@ -25,10 +23,9 @@ class MainWindow(QMainWindow):
         self.filepath: Path | None = None
         self.start_time: float = 0.0
         self.end_time: float | None = None
-        self.cal_factor: float = 1.0 # Default Linear Factor
+        self.cal_factor: float = 1.0 
         self.block_size_ms: float = 100.0
         
-        # Worker Reference
         self.worker: AnalysisWorker | None = None
         
         self._init_ui()
@@ -36,6 +33,7 @@ class MainWindow(QMainWindow):
         self.status_bar.showMessage("Ready. Load a file to begin.")
 
     def _init_ui(self):
+        # ... (UI Layout Code - Unchanged from previous step) ...
         central = QWidget()
         self.setCentralWidget(central)
         main_layout = QHBoxLayout(central)
@@ -54,8 +52,6 @@ class MainWindow(QMainWindow):
         self.btn_select = QPushButton("Select File Section")
         self.btn_select.clicked.connect(self.on_select_section)
         self.btn_select.setEnabled(False)
-        
-        # Calibration Button
         self.btn_cal = QPushButton("Calibrate...")
         self.btn_cal.clicked.connect(self.on_calibrate)
         self.btn_cal.setStyleSheet("background-color: #f3f4f6;")
@@ -116,9 +112,7 @@ class MainWindow(QMainWindow):
         layout_leq = QHBoxLayout()
         layout_leq.addWidget(QLabel("Plot Interval:"))
         self.combo_leq_int = QComboBox()
-        # ADDED "100 ms"
         self.combo_leq_int.addItems(["100 ms", "1 sec", "10 sec", "1 min", "15 min", "1 hour"])
-        # Set default to 1 sec (index 1) to match previous behavior
         self.combo_leq_int.setCurrentIndex(1)
         layout_leq.addWidget(self.combo_leq_int)
         grp_leq.setLayout(layout_leq)
@@ -172,7 +166,6 @@ class MainWindow(QMainWindow):
                 inf = info(str(self.filepath))
                 self.end_time = inf.duration
                 self._update_file_info_label(inf)
-                
                 self.btn_select.setEnabled(True)
                 self.btn_analyze.setEnabled(True)
                 self.status_bar.showMessage("File loaded.")
@@ -188,14 +181,12 @@ class MainWindow(QMainWindow):
             s, e = dlg.get_selection()
             self.start_time = s
             self.end_time = e
-            
             curr = self.lbl_info.text().split("\nSelection:")[0]
             self.lbl_info.setText(f"{curr}\nSelection: {s:.2f}s - {e:.2f}s")
 
     def on_calibrate(self):
         start = self.start_time
         end = self.end_time if self.end_time else 0.0
-        
         dlg = CalibrationDialog(self.cal_factor, self.filepath, start, end, self)
         if dlg.exec():
             self.cal_factor = dlg.get_factor()
@@ -256,12 +247,10 @@ class MainWindow(QMainWindow):
         
         self.worker.sig_total_blocks.connect(self.progress.setMaximum)
         self.worker.sig_progress.connect(self.progress.setValue)
-        
         self.worker.sig_finished.connect(lambda res: self.on_analysis_finished(res, mode_id, weighting, speed))
         self.worker.sig_error.connect(self.on_analysis_error)
         self.worker.finished.connect(self.on_worker_stopped)
         self.worker.finished.connect(self.worker.deleteLater)
-        
         self.worker.start()
 
     def on_worker_stopped(self):
@@ -288,112 +277,30 @@ class MainWindow(QMainWindow):
         self.status_bar.showMessage("Analysis Complete.")
 
     def _plot_results(self, results: list, mode_id: int, weighting: str, speed: str):
-        fig = self.plot_panel.figure
-        fig.clear()
-        
-        if not results: 
-            self.plot_panel.draw()
-            return
-
-        match mode_id:
-            case 1: # LEQ MODE
-                int_txt = self.combo_leq_int.currentText()
-                match int_txt:
-                    case "100 ms": interval = 0.1 # NEW MAPPING
-                    case "1 sec": interval = 1.0
-                    case "10 sec": interval = 10.0
-                    case "1 min": interval = 60.0
-                    case "15 min": interval = 900.0
-                    case "1 hour": interval = 3600.0
-                    case _: interval = 1.0
-                
-                stats = leq.calculate_leq_analysis(results, self.block_size_ms, interval)
-                
-                ax1 = fig.add_subplot(2, 1, 1)
-                if len(stats.history['time']) > 0:
-                    t_plot = list(stats.history['time'])
-                    t_plot.append(t_plot[-1] + interval)
-                    l_plot = list(stats.history['leq'])
-                    l_plot.append(l_plot[-1])
-                    ax1.step(t_plot, l_plot, where='post', color='b', linewidth=1.5)
-                
-                ax1.set_title(f"LEQ History ({int_txt} interval, {weighting}-weighted)")
-                ax1.set_ylabel("LEQ (dB)")
-                ax1.grid(True)
-                
-                ax2 = fig.add_subplot(2, 1, 2)
-                ax2.axis('off')
-                col1, col2, col3 = 0.05, 0.35, 0.65
-                
-                ax2.text(0.5, 0.95, f"Overall LEQ: {stats.overall:.1f} dB", 
-                         ha='center', fontsize=14, fontweight='bold', color='blue')
-                ax2.text(col1, 0.80, f"Lmax: {stats.max:.1f} dB")
-                ax2.text(col1, 0.65, f"Lmin: {stats.min:.1f} dB")
-                ax2.text(col1, 0.50, f"L10: {stats.ln[10]:.1f} dB")
-                ax2.text(col1, 0.35, f"L50: {stats.ln[50]:.1f} dB")
-                ax2.text(col1, 0.20, f"L90: {stats.ln[90]:.1f} dB")
-                ax2.text(col2, 0.80, f"L20: {stats.ln[20]:.1f} dB")
-                ax2.text(col2, 0.65, f"L30: {stats.ln[30]:.1f} dB")
-                ax2.text(col2, 0.50, f"L40: {stats.ln[40]:.1f} dB")
-                ax2.text(col2, 0.35, f"L60: {stats.ln[60]:.1f} dB")
-                ax2.text(col2, 0.20, f"L80: {stats.ln[80]:.1f} dB")
-                ax2.text(col3, 0.80, f"Dose ({stats.dose['standard']})", fontweight='bold')
-                ax2.text(col3, 0.65, f"Dose %: {stats.dose['dose']:.1f}%")
-                ax2.text(col3, 0.50, f"TWA: {stats.dose['twa']:.1f} dB")
-                fig.tight_layout()
-
-            case 0: # LEVEL VS TIME
-                ax = fig.add_subplot(1, 1, 1)
-                t = [r['time'] for r in results]
-                l = [r['lp'] for r in results]
-                ax.plot(t, l)
-                ax.set_title(f"Sound Pressure Level vs Time ({weighting}-weighted, {speed})")
-                ax.set_xlabel("Time (s)")
-                ax.set_ylabel("Level (dB)")
-                ax.grid(True)
-
-            case 2 | 3: # SPECTRAL
-                ax = fig.add_subplot(1, 1, 1)
-                freqs = results[0]['band_freqs']
-                energy_sums = np.zeros(len(freqs))
-                for r in results:
-                    pressures = (10**(r['bands']/10.0)) * (20e-6**2)
-                    energy_sums += pressures
-                mean_db = 10 * np.log10((energy_sums / len(results)) / (20e-6**2) + 1e-30)
-                
-                x = np.arange(len(freqs))
-                ax.bar(x, mean_db, color='#2ca02c', alpha=0.8)
-                ax.set_xticks(x)
-                lbls = []
-                for f in freqs:
-                    if f >= 1000: lbls.append(f"{f/1000:.0f}k")
-                    else: lbls.append(f"{f:.0f}")
-                if mode_id == 3: 
-                    lbls = [l if i%3==0 else "" for i, l in enumerate(lbls)]
-                ax.set_xticklabels(lbls, rotation=90)
-                ax.set_title(f"Average Spectrum ({weighting}-weighted)")
-                ax.set_ylabel("Level (dB)")
-                ax.grid(axis='y')
-
+        # Delegate to new ResultPlotter class
+        leq_int_txt = self.combo_leq_int.currentText()
+        ResultPlotter.plot(
+            self.plot_panel.figure,
+            results,
+            mode_id,
+            weighting,
+            speed,
+            leq_int_txt,
+            self.block_size_ms
+        )
+        # Redraw
         self.plot_panel.draw()
 
     def closeEvent(self, event):
-        """
-        Graceful shutdown: Prevent zombie threads if user closes window during analysis.
-        """
         if self.worker is not None and self.worker.isRunning():
             reply = QMessageBox.question(
-                self, 
-                'Analysis Running',
+                self, 'Analysis Running',
                 "An analysis is currently running.\nDo you want to stop it and exit?",
-                QMessageBox.Yes | QMessageBox.No, 
-                QMessageBox.No
+                QMessageBox.Yes | QMessageBox.No, QMessageBox.No
             )
-
             if reply == QMessageBox.Yes:
-                self.status_bar.showMessage("Stopping background thread...")
                 self.worker.stop()
-                self.worker.wait() # Block until thread cleanly exits
+                self.worker.wait()
                 event.accept()
             else:
                 event.ignore()

@@ -14,7 +14,9 @@ class ResultPlotter:
              weighting: str, 
              speed: str, 
              leq_interval_txt: str, 
-             block_size_ms: float):
+             block_size_ms: float,
+             dose_params: dict,          # Added
+             ref_pressure: float):       # Added
         
         fig.clear()
         
@@ -23,18 +25,23 @@ class ResultPlotter:
 
         match mode_id:
             case 1: # LEQ MODE
-                ResultPlotter._plot_leq_dashboard(fig, results, weighting, leq_interval_txt, block_size_ms)
+                ResultPlotter._plot_leq_dashboard(
+                    fig, results, weighting, leq_interval_txt, 
+                    block_size_ms, dose_params, ref_pressure
+                )
 
             case 0: # LEVEL VS TIME (Lp)
                 ResultPlotter._plot_lp_history(fig, results, weighting, speed)
 
             case 2 | 3: # SPECTRAL (Octave or Third)
-                # mode_id 2 is Octave, 3 is Third Octave
                 is_third = (mode_id == 3)
-                ResultPlotter._plot_spectrum(fig, results, weighting, is_third)
+                ResultPlotter._plot_spectrum(
+                    fig, results, weighting, is_third, ref_pressure
+                )
 
     @staticmethod
-    def _plot_leq_dashboard(fig, results, weighting, interval_txt, block_size_ms):
+    def _plot_leq_dashboard(fig, results, weighting, interval_txt, 
+                            block_size_ms, dose_params, ref_pressure):
         # 1. Parse Interval
         match interval_txt:
             case "100 ms": interval = 0.1
@@ -45,14 +52,15 @@ class ResultPlotter:
             case "1 hour": interval = 3600.0
             case _: interval = 1.0
         
-        # 2. Calculate Stats
-        stats = leq.calculate_leq_analysis(results, block_size_ms, interval)
+        # 2. Calculate Stats (passing new params)
+        stats = leq.calculate_leq_analysis(
+            results, block_size_ms, interval, dose_params, ref_pressure
+        )
         
         # 3. Top Plot (Time History Step Plot)
         ax1 = fig.add_subplot(2, 1, 1)
         if len(stats.history['time']) > 0:
             t_plot = list(stats.history['time'])
-            # Append end point for step plot closure
             t_plot.append(t_plot[-1] + interval)
             l_plot = list(stats.history['leq'])
             l_plot.append(l_plot[-1])
@@ -89,6 +97,10 @@ class ResultPlotter:
         ax2.text(col2, 0.20, f"L80: {stats.ln[80]:.1f} dB")
         
         # Column 3 (Dose)
+        # Handle 'standard' key safely if using custom dict
+        std_label = dose_params.get('name', 'Custom') 
+        # Actually stats.dose has the 'standard' key populated by calculate_leq_analysis
+        
         ax2.text(col3, 0.80, f"Dose ({stats.dose['standard']})", fontweight='bold')
         ax2.text(col3, 0.65, f"Dose %: {stats.dose['dose']:.1f}%")
         ax2.text(col3, 0.50, f"TWA: {stats.dose['twa']:.1f} dB")
@@ -107,16 +119,19 @@ class ResultPlotter:
         ax.grid(True)
 
     @staticmethod
-    def _plot_spectrum(fig, results, weighting, is_third_octave):
+    def _plot_spectrum(fig, results, weighting, is_third_octave, ref_pressure):
         ax = fig.add_subplot(1, 1, 1)
         freqs = results[0]['band_freqs']
         
         # Energy Average
         energy_sums = np.zeros(len(freqs))
         for r in results:
-            pressures = (10**(r['bands']/10.0)) * (20e-6**2)
+            # Note: r['bands'] is already dB. Convert to P^2 using Reference.
+            pressures = (10**(r['bands']/10.0)) * (ref_pressure**2)
             energy_sums += pressures
-        mean_db = 10 * np.log10((energy_sums / len(results)) / (20e-6**2) + 1e-30)
+        
+        # Convert average energy back to dB
+        mean_db = 10 * np.log10((energy_sums / len(results)) / (ref_pressure**2) + 1e-30)
         
         x = np.arange(len(freqs))
         ax.bar(x, mean_db, color='#2ca02c', alpha=0.8)
@@ -128,7 +143,6 @@ class ResultPlotter:
             if f >= 1000: lbls.append(f"{f/1000:.0f}k")
             else: lbls.append(f"{f:.0f}")
         
-        # Sparse labels for 1/3 octave to prevent crowding
         if is_third_octave: 
             lbls = [l if i % 3 == 0 else "" for i, l in enumerate(lbls)]
             

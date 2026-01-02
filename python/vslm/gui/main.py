@@ -1,21 +1,43 @@
 import sys
 from pathlib import Path
+import sounddevice as sd
+import soundfile as sf
 from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, 
                                QHBoxLayout, QPushButton, QLabel, QGroupBox, 
                                QFileDialog, QMessageBox, QFrame, QButtonGroup, 
                                QRadioButton, QProgressBar, QComboBox)
 from PySide6.QtGui import QAction, QDesktopServices
-from PySide6.QtCore import QUrl
+from PySide6.QtCore import QUrl, QThread, Signal
 
 # --- VSLM Imports ---
 from .waveform import WaveformDialog
 from .calibration_dialog import CalibrationDialog
 from .about_dialog import AboutDialog 
 from .widgets import MatplotlibWidget
-from .workers import AnalysisWorker
+from .workers import AnalysisWorker, PlaybackWorker
 from .plotter import ResultPlotter
 from ..export import ResultsExporter
 from ..settings import SettingsManager, AppSettings
+
+# class PlaybackWorker(QThread):
+#     """Worker thread to play audio without freezing the GUI."""
+#     sig_error = Signal(str)
+
+#     def __init__(self, data, fs):
+#         super().__init__()
+#         self.data = data
+#         self.fs = fs
+
+#     def run(self):
+#         try:
+#             # blocking=True ensures the thread stays alive until playback finishes
+#             # or is stopped via sd.stop()
+#             sd.play(self.data, self.fs, blocking=True)
+#         except Exception as e:
+#             self.sig_error.emit(str(e))
+
+#     def stop(self):
+#         sd.stop()
 
 class MainWindow(QMainWindow):
     def __init__(self):
@@ -37,6 +59,7 @@ class MainWindow(QMainWindow):
         self.last_results: list = [] 
         self.has_unsaved_data: bool = False # DIRTY FLAG
         self.worker: AnalysisWorker | None = None
+        self.playback_worker: PlaybackWorker | None = None
         
         # 3. Setup UI
         self._init_menu_bar()
@@ -115,9 +138,15 @@ class MainWindow(QMainWindow):
         layout_file = QVBoxLayout()
         self.btn_load = QPushButton("Load WAV File")
         self.btn_load.clicked.connect(self.on_load_file)
+        
         self.btn_select = QPushButton("Select File Section")
         self.btn_select.clicked.connect(self.on_select_section)
         self.btn_select.setEnabled(False)
+        
+        self.btn_play = QPushButton("Play File Section")
+        self.btn_play.clicked.connect(self.on_play_stop)
+        self.btn_play.setEnabled(False)
+        
         self.btn_cal = QPushButton("Calibrate...")
         self.btn_cal.clicked.connect(self.on_calibrate)
         self.btn_cal.setStyleSheet("background-color: #f3f4f6;")
@@ -130,6 +159,7 @@ class MainWindow(QMainWindow):
         
         layout_file.addWidget(self.btn_load)
         layout_file.addWidget(self.btn_select)
+        layout_file.addWidget(self.btn_play)
         layout_file.addWidget(self.btn_cal) 
         layout_file.addWidget(self.lbl_info_header)
         layout_file.addWidget(self.lbl_info)
@@ -241,8 +271,7 @@ class MainWindow(QMainWindow):
             return
             
         if inf is None:
-            from soundfile import info
-            inf = info(str(self.filepath))
+            inf = sf.info(str(self.filepath))
             
         self.lbl_info.setText(f"File: {self.filepath.name}\n"
                               f"Fs: {inf.samplerate} Hz\n"
@@ -289,12 +318,12 @@ class MainWindow(QMainWindow):
             self.settings.last_directory = str(path.parent)
             
             try:
-                from soundfile import info
-                inf = info(str(self.filepath))
+                inf = sf.info(str(self.filepath))
                 self.end_time = inf.duration
                 self._update_file_info_label(inf)
                 
                 self.btn_select.setEnabled(True)
+                self.btn_play.setEnabled(True)
                 self.btn_analyze.setEnabled(True)
                 self.menu_export.setEnabled(False)
                 # Reset Unsaved Data flag when loading new file
@@ -315,6 +344,53 @@ class MainWindow(QMainWindow):
             curr = self.lbl_info.text().split("\nSelection:")[0]
             self.lbl_info.setText(f"{curr}\nSelection: {s:.2f}s - {e:.2f}s")
 
+    def on_play_stop(self):
+        """Handles starting and stopping audio playback."""
+        # 1. STOP Logic
+        if self.playback_worker and self.playback_worker.isRunning():
+            self.playback_worker.stop()
+            # We don't manually reset text here; we wait for the finished signal
+            return
+
+        # 2. START Logic
+        if not self.filepath: 
+            return
+
+        try:
+            # Read metadata to get Sample Rate
+            info = sf.info(str(self.filepath))
+            fs = info.samplerate
+            
+            # Calculate frames from time
+            start_frame = int(self.start_time * fs)
+            end_frame = int(self.end_time * fs) if self.end_time else None
+            
+            # Read the audio section
+            # soundfile.read returns (data, samplerate) but we already have samplerate
+            # and read only returns data if we specify bounds
+            if end_frame:
+                data, _ = sf.read(str(self.filepath), start=start_frame, stop=end_frame)
+            else:
+                data, _ = sf.read(str(self.filepath), start=start_frame)
+            
+            # Start Worker
+            self.playback_worker = PlaybackWorker(data, fs)
+            self.playback_worker.finished.connect(self.on_playback_finished)
+            self.playback_worker.sig_error.connect(lambda e: QMessageBox.critical(self, "Playback Error", e))
+            self.playback_worker.start()
+            
+            self.btn_play.setText("Stop playing")
+            self.status_bar.showMessage("Playing audio...")
+            
+        except Exception as e:
+            QMessageBox.critical(self, "Playback Error", str(e))
+
+    def on_playback_finished(self):
+        """Called when playback finishes naturally or is stopped."""
+        self.btn_play.setText("Play File Section")
+        self.status_bar.showMessage("Playback stopped.")
+        self.playback_worker = None
+
     def on_calibrate(self):
         start = self.start_time
         end = self.end_time if self.end_time else 0.0
@@ -328,6 +404,7 @@ class MainWindow(QMainWindow):
     def toggle_inputs(self, enabled: bool):
         self.btn_load.setEnabled(enabled)
         self.btn_select.setEnabled(enabled)
+        self.btn_play.setEnabled(enabled)
         self.btn_cal.setEnabled(enabled) 
         self.combo_leq_int.setEnabled(enabled)
         # Enable Export Menu if we have results and not running

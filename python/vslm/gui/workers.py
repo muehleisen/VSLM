@@ -1,7 +1,7 @@
-# python2/vslm/gui/workers.py
 from PySide6.QtCore import QThread, Signal
 from pathlib import Path
 import traceback
+import sounddevice as sd
 from ..analysis_engine import StreamProcessor
 
 class AnalysisWorker(QThread):
@@ -67,3 +67,23 @@ class AnalysisWorker(QThread):
                 
         except Exception as e:
             self.sig_error.emit(f"{str(e)}\n\n{traceback.format_exc()}")
+
+class PlaybackWorker(QThread):
+    """Worker thread to play audio without freezing the GUI using sounddevice."""
+    sig_error = Signal(str)
+
+    def __init__(self, data, fs):
+        super().__init__()
+        self.data = data
+        self.fs = fs
+
+    def run(self):
+        try:
+            # blocking=True ensures the thread stays alive until playback finishes
+            # or is stopped via sd.stop()
+            sd.play(self.data, self.fs, blocking=True)
+        except Exception as e:
+            self.sig_error.emit(str(e))
+
+    def stop(self):
+        sd.stop()

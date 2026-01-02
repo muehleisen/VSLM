@@ -1,122 +1,111 @@
 # python2/vslm/leq.py
 import numpy as np
+from dataclasses import dataclass
 
+@dataclass
 class LeqStats:
-    def __init__(self, overall_leq, l_max, l_min, percentiles, dose_result, time_history, stats_block_size_ms):
-        self.overall = overall_leq
-        self.max = l_max
-        self.min = l_min
-        self.ln = percentiles # Dict {10: val, 90: val, ...}
-        self.dose = dose_result # Dict {twa: val, dose_pct: val}
-        self.history = time_history # Dict {time: [], leq: []}
-        self.stats_block_size_ms = stats_block_size_ms
+    """Data object holding LEQ statistical analysis results."""
+    overall: float
+    max: float
+    min: float
+    ln: dict[int, float]              # e.g. {10: 85.4, 90: 45.2}
+    dose: dict[str, float | str]      # e.g. {'twa': 85.0, 'standard': 'NIOSH'}
+    history: dict[str, list[float]]   # e.g. {'time': [...], 'leq': [...]}
+    stats_block_size_ms: float
 
-def calculate_leq_analysis(block_results, 
-                           stats_block_ms=100, 
-                           integration_time_s=1.0, 
-                           dose_standard='NIOSH'):
+def calculate_leq_analysis(block_results: list[dict], 
+                           stats_block_ms: float = 100.0, 
+                           integration_time_s: float = 1.0, 
+                           dose_standard: str = 'NIOSH') -> LeqStats:
     """
-    Performs full LEQ analysis on a sequence of short-term (e.g. 100ms) blocks.
-    
-    Args:
-        block_results (list): List of dicts {'time': t, 'leq': db} from StreamProcessor.
-        stats_block_ms (float): The size of blocks used for statistics (default 100ms).
-        integration_time_s (float): The aggregation interval for the time history plot.
-        dose_standard (str): 'NIOSH' or 'OSHA'.
-        
-    Returns:
-        LeqStats object.
+    Performs full LEQ analysis on a sequence of short-term blocks.
     """
-    # 1. Extract raw 100ms data
-    # We convert back to pressure squared for accurate averaging
+    # 1. Extract raw data
     raw_db = np.array([b['leq'] for b in block_results])
+    # Convert back to pressure squared for accurate averaging
     raw_pressure_sq = (10**(raw_db/10.0)) * (20e-6**2)
     
-    # --- Statistics (based on 100ms blocks) ---
+    # --- Statistics ---
     
-    # Overall LEQ (Energy Average of whole file)
+    # Overall LEQ
     overall_msq = np.mean(raw_pressure_sq)
     overall_leq = 10 * np.log10(overall_msq / (20e-6**2) + 1e-30)
     
-    # Min / Max
     l_max = np.max(raw_db)
     l_min = np.min(raw_db)
     
-    # Percentiles (Ln)
-    # L10 is the level exceeded 10% of the time (which is the 90th percentile)
-    percentiles = {}
-    for n in [10, 20, 30, 40, 50, 60, 70, 80, 90]:
-        # numpy percentile q is 0-100 (lower to higher)
-        # L10 = 90th percentile
-        p_val = np.percentile(raw_db, 100 - n)
-        percentiles[n] = p_val
+    # Percentiles (Ln) using dictionary comprehension
+    # L10 is the 90th percentile value
+    percentiles = {
+        n: np.percentile(raw_db, 100 - n) 
+        for n in [10, 20, 30, 40, 50, 60, 70, 80, 90]
+    }
         
     # Noise Dose Calculation
-    # Defaults for NIOSH
-    exchange_rate = 3
-    criterion_level = 85
-    threshold_level = 80
-    
-    if dose_standard == 'OSHA':
-        exchange_rate = 5
-        criterion_level = 90
-        threshold_level = 80 # OSHA Hearing Conservation (80), Permissible (90)
+    match dose_standard:
+        case 'OSHA':
+            exchange_rate = 5
+            criterion_level = 90
+            threshold_level = 80
+        case _: # NIOSH (Default)
+            exchange_rate = 3
+            criterion_level = 85
+            threshold_level = 80
         
-    # Formula from VSLM Matlab:
-    # q = Dex / log10(2)
-    # D = sum(dt * 10^((L - DLc)/q)) / Tn
-    # Tn = 480 * 60 (8 hours)
-    
     q = exchange_rate / np.log10(2)
-    Tn = 480 * 60.0
+    Tn = 480 * 60.0  # 8 hours in minutes
     dt = stats_block_ms / 1000.0
     
-    # Filter for Threshold
-    # Only levels > Threshold contribute to dose
+    # Vectorized Dose Calculation
     mask = raw_db > threshold_level
     dose_db = raw_db[mask]
     
-    if len(dose_db) > 0:
+    if dose_db.size > 0:
         term = (dose_db - criterion_level) / q
         accumulated = np.sum(dt * (10**term))
         dose_fraction = accumulated / Tn
         
-        # TWA = 10 * log10(D) + DLc
-        if dose_fraction > 0:
-            twa = 10 * np.log10(dose_fraction) + criterion_level
-        else:
-            twa = 0
+        twa = (10 * np.log10(dose_fraction) + criterion_level) if dose_fraction > 0 else 0.0
     else:
         dose_fraction = 0.0
         twa = 0.0
         
-    dose_result = {'dose': dose_fraction * 100.0, 'twa': twa, 'standard': dose_standard}
+    dose_result = {
+        'dose': dose_fraction * 100.0, 
+        'twa': twa, 
+        'standard': dose_standard
+    }
 
     # --- Time History Aggregation ---
-    # Combine 100ms blocks into 'integration_time_s' chunks (e.g. 1s or 1min)
-    
     blocks_per_interval = int(integration_time_s / (stats_block_ms / 1000.0))
     if blocks_per_interval < 1: 
         blocks_per_interval = 1
         
-    num_intervals = len(raw_pressure_sq) // blocks_per_interval
+    # Reshape for fast averaging (truncating remainder)
+    n_total = len(raw_pressure_sq)
+    n_intervals = n_total // blocks_per_interval
     
-    agg_time = []
-    agg_leq = []
-    
-    for i in range(num_intervals):
-        start_idx = i * blocks_per_interval
-        end_idx = start_idx + blocks_per_interval
+    if n_intervals > 0:
+        # Truncate
+        trimmed_sq = raw_pressure_sq[:n_intervals*blocks_per_interval]
+        # Reshape to (n_intervals, blocks_per_interval)
+        reshaped = trimmed_sq.reshape(n_intervals, blocks_per_interval)
+        # Average across columns (axis 1)
+        means = np.mean(reshaped, axis=1)
+        # Convert to dB
+        agg_leq = 10 * np.log10(means / (20e-6**2) + 1e-30)
+        # Time axis
+        agg_time = np.arange(n_intervals) * integration_time_s
+    else:
+        agg_leq = np.array([])
+        agg_time = np.array([])
         
-        chunk = raw_pressure_sq[start_idx:end_idx]
-        mean_p = np.mean(chunk)
-        db = 10 * np.log10(mean_p / (20e-6**2) + 1e-30)
-        
-        # Time stamp is the start of the interval
-        t = i * integration_time_s
-        
-        agg_time.append(t)
-        agg_leq.append(db)
-        
-    return LeqStats(overall_leq, l_max, l_min, percentiles, dose_result, 
-                    {'time': agg_time, 'leq': agg_leq}, stats_block_ms)
+    return LeqStats(
+        overall=overall_leq, 
+        max=l_max, 
+        min=l_min, 
+        ln=percentiles, 
+        dose=dose_result, 
+        history={'time': agg_time.tolist(), 'leq': agg_leq.tolist()}, 
+        stats_block_size_ms=stats_block_ms
+    )

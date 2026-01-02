@@ -2,7 +2,8 @@
 import numpy as np
 import soundfile as sf
 import os
-import warnings
+from pathlib import Path
+from typing import Generator, Any
 
 from .filters.weighting import WeightingFilter
 from .filters.ansi import OctaveFilterBank
@@ -10,78 +11,60 @@ from .filters.ansi import OctaveFilterBank
 class TimeWeightingDetector:
     """
     Applies IEC 61672-1 Time Weighting (Fast, Slow, Impulse).
-    Processes every sample (no downsampling) for maximum accuracy.
     """
-    def __init__(self, fs, mode='Fast'):
+    def __init__(self, fs: float, mode: str = 'Fast'):
         self.fs = fs
         self.mode = mode
-        self.state = 0.0 # Stores the previous smoothed power value
+        self.state = 0.0 
         
-        # Calculate Time Constants
-        # Alpha = 1 - exp(-1 / (fs * tau))
-        if mode == 'Fast':
-            tau = 0.125
-            self.alpha_rise = 1.0 - np.exp(-1.0 / (fs * tau))
-            self.alpha_fall = self.alpha_rise
-        elif mode == 'Slow':
-            tau = 1.0
-            self.alpha_rise = 1.0 - np.exp(-1.0 / (fs * tau))
-            self.alpha_fall = self.alpha_rise
-        elif mode == 'Impulse':
-            tau_rise = 0.035
-            tau_fall = 1.5
-            self.alpha_rise = 1.0 - np.exp(-1.0 / (fs * tau_rise))
-            self.alpha_fall = 1.0 - np.exp(-1.0 / (fs * tau_fall))
-        else:
-            self.alpha_rise = 0.1
-            self.alpha_fall = 0.1
-        
+        match mode:
+            case 'Fast':
+                tau_rise = tau_fall = 0.125
+            case 'Impulse':
+                tau_rise = 0.035
+                tau_fall = 1.5
+            case _:  # Default (Slow)
+                tau_rise = tau_fall = 1.0
+            
+        self.alpha_rise = 1.0 - np.exp(-1.0 / (fs * tau_rise))
+        self.alpha_fall = 1.0 - np.exp(-1.0 / (fs * tau_fall))
 
-    def process(self, chunk):
-        """
-        Processes a chunk of audio sample-by-sample and returns the peak Lp level (dB).
-        """
-        # 1. Calculate Instantaneous Power
+    def process(self, chunk: np.ndarray) -> float:
+        """Sample-by-sample recursive smoothing returning peak Lp (dB)."""
         p2 = chunk**2
-        
-        # 2. Sample-by-Sample Recursive Smoothing
         current_val = self.state
-        max_val_in_block = 0.0
+        max_val = 0.0
         
-        # Cache alphas to locals for loop speed optimization
+        # Local lookup optimization
         a_rise = self.alpha_rise
         a_fall = self.alpha_fall
         
-        # This loop runs at full Fs (e.g. 48,000 times per second of audio)
         for s in p2:
             if s > current_val:
-                # Rising Edge
                 current_val = (1 - a_rise) * current_val + a_rise * s
             else:
-                # Falling Edge
                 current_val = (1 - a_fall) * current_val + a_fall * s
             
-            if current_val > max_val_in_block:
-                max_val_in_block = current_val
+            if current_val > max_val:
+                max_val = current_val
         
         self.state = current_val
-        
-        # Return dB (prevent log0)
-        return 10 * np.log10(max_val_in_block / (20e-6**2) + 1e-30)
+        return 10 * np.log10(max_val / (20e-6**2) + 1e-30)
 
 class StreamProcessor:
     """
     Orchestrates the streaming analysis of an audio file.
     """
-    def __init__(self, filepath, cal_factor=1.0):
-        if not os.path.exists(filepath):
+    def __init__(self, filepath: str | Path, cal_factor: float = 1.0):
+        self.filepath = Path(filepath)
+        if not self.filepath.exists():
             raise FileNotFoundError(f"File not found: {filepath}")
             
-        self.filepath = filepath
         self.cal_factor = cal_factor
         
         try:
-            info = sf.info(filepath)
+            # sf.info accepts Path objects in newer versions, convert to str to be safe
+            info = sf.info(str(self.filepath))
             self.fs = info.samplerate
             self.duration = info.duration
             self.channels = info.channels
@@ -89,15 +72,13 @@ class StreamProcessor:
             raise ValueError(f"Could not read file info: {e}")
         
     def run_analysis(self, 
-                     block_size_ms=100, 
-                     weighting='A', 
-                     do_band_analysis=False, 
-                     band_resolution='octave',
-                     band_order=24,
-                     time_weighting='Fast'): 
-        """
-        Generator that yields analysis results for each time block.
-        """
+                     block_size_ms: float = 100.0, 
+                     weighting: str = 'A', 
+                     do_band_analysis: bool = False, 
+                     band_resolution: str = 'octave',
+                     band_order: int = 24,
+                     time_weighting: str = 'Fast') -> Generator[dict[str, Any], None, None]:
+        
         # 1. Initialize Filters
         weighting_filter = WeightingFilter(self.fs, weighting)
         lp_detector = TimeWeightingDetector(self.fs, time_weighting)
@@ -110,7 +91,7 @@ class StreamProcessor:
         if block_samples == 0:
             raise ValueError("Block size is too small.")
         
-        with sf.SoundFile(self.filepath) as f:
+        with sf.SoundFile(str(self.filepath)) as f:
             # --- Seeding Logic ---
             seed_data = f.read(block_samples, always_2d=False, fill_value=0.0)
             if seed_data.ndim > 1: seed_data = np.mean(seed_data, axis=1)
@@ -118,16 +99,12 @@ class StreamProcessor:
             
             weighting_filter.initialize_state(seed_data)
             if band_bank: band_bank.initialize_state(seed_data)
-            
-            # Seed the time weighting detector (run forward only)
             lp_detector.process(seed_data) 
             
             f.seek(0)
             # ---------------------
 
             current_time = 0.0
-            
-            # Use instance method f.blocks()
             block_gen = f.blocks(blocksize=block_samples, always_2d=False, fill_value=0.0)
             
             for chunk in block_gen:
@@ -136,11 +113,9 @@ class StreamProcessor:
                 calibrated_chunk = chunk * self.cal_factor
                 weighted_chunk = weighting_filter.process_chunk(calibrated_chunk)
                 
-                # 1. Compute LEQ (Short-term Integration)
+                # Metrics
                 ms_broadband = np.mean(weighted_chunk**2)
                 leq_block = 10 * np.log10(ms_broadband / (20e-6)**2 + 1e-30)
-                
-                # 2. Compute Lp (Time Weighted) - Sample accurate
                 lp_block = lp_detector.process(weighted_chunk)
                 
                 result = {
@@ -152,9 +127,7 @@ class StreamProcessor:
                 if band_bank:
                     filtered_bands = band_bank.process_chunk(calibrated_chunk)
                     ms_bands = np.mean(filtered_bands**2, axis=0)
-                    leq_bands = 10 * np.log10(ms_bands / (20e-6)**2 + 1e-30)
-                    
-                    result['bands'] = leq_bands
+                    result['bands'] = 10 * np.log10(ms_bands / (20e-6)**2 + 1e-30)
                     result['band_freqs'] = band_bank.frequencies
 
                 yield result

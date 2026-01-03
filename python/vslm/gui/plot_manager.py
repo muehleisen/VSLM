@@ -1,8 +1,8 @@
 import numpy as np
 import traceback
 from matplotlib.figure import Figure
-from .. import leq_calculator
-from ..constants import LEQ_INTERVAL_MAP # New Import
+from .. import leq_calculator as leq
+from ..constants import LEQ_INTERVAL_MAP
 
 class ResultPlotter:
     @staticmethod
@@ -11,7 +11,7 @@ class ResultPlotter:
              mode_id: int, 
              weighting: str, 
              speed: str, 
-             leq_interval_key,     # Expects Enum or Key
+             leq_interval_key,
              block_size_ms: float,
              dose_params: dict,
              ref_pressure: float,
@@ -25,29 +25,32 @@ class ResultPlotter:
             return
 
         try:
-            if mode_id == 1: # LEQ MODE
-                ResultPlotter._plot_leq_dashboard(
-                    figure, results, weighting, leq_interval_key, 
-                    block_size_ms, dose_params, ref_pressure,
-                    autoscale, ymin, ymax
-                )
-            elif mode_id == 0: # Lp
-                ResultPlotter._plot_lp_history(
-                    figure, results, weighting, speed,
-                    autoscale, ymin, ymax
-                )
-            elif mode_id in [2, 3]: # Spectrum
-                is_third = (mode_id == 3)
-                ResultPlotter._plot_spectrum(
-                    figure, results, weighting, is_third, ref_pressure,
-                    autoscale, ymin, ymax
-                )
+            # Implement Structural Pattern Matching (Python 3.10+)
+            match mode_id:
+                case 1: # LEQ MODE
+                    ResultPlotter._plot_leq_dashboard(
+                        figure, results, weighting, leq_interval_key, 
+                        block_size_ms, dose_params, ref_pressure,
+                        autoscale, ymin, ymax
+                    )
+                case 0: # Lp
+                    ResultPlotter._plot_lp_history(
+                        figure, results, weighting, speed,
+                        autoscale, ymin, ymax
+                    )
+                case 2 | 3: # Spectrum (2=Octave, 3=Third Octave)
+                    is_third = (mode_id == 3)
+                    ResultPlotter._plot_spectrum(
+                        figure, results, weighting, is_third, ref_pressure,
+                        autoscale, ymin, ymax
+                    )
         except Exception as e:
             ax = figure.add_subplot(111)
             ax.text(0.5, 0.5, f"Plot Error:\n{str(e)}", ha='center', va='center', color='red')
             print(f"Plot Error Traceback:\n{traceback.format_exc()}")
         
         figure.tight_layout()
+
 
     @staticmethod
     def _plot_leq_dashboard(fig, results, weighting, interval_key, 

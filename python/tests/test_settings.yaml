@@ -1,8 +1,8 @@
-# Saved by vlsm.py on 2026-01-02 15:27:15
+# Saved by vlsm.py on 2026-01-02 21:28:33
 analysis_mode_index: 1
 band_filter_order: 24
 block_size_ms: 100.0
-calibration_factor: 1.0
+calibration_factor: 1.7520914808441688
 current_dose_standard: NIOSH
 dose_standards:
   NIOSH:
@@ -15,8 +15,11 @@ dose_standards:
     exchange_rate: 5.0
     shift_hours: 8.0
     threshold_level: 80.0
-last_directory: C:\Users\ralph\git\VSLM\python2\tests
-leq_interval_index: 1
+last_directory: C:\Users\ralph\git\VSLM\python\tests
+leq_interval_index: 0
+plot_autoscale: true
+plot_ymax: 110.0
+plot_ymin: 40.0
 ref_pressure: 2.0e-05
-speed: Fast
-weighting: Z
+speed: Slow
+weighting: A

@@ -3,7 +3,7 @@ matplotlib.use('QtAgg')
 from PySide6.QtWidgets import (QWidget, QVBoxLayout, QDialog, QCheckBox, 
                                QDoubleSpinBox, QHBoxLayout, QPushButton,
                                QFormLayout, QToolButton)
-from PySide6.QtGui import QAction, QIcon, QPainter, QPen, QPixmap, QColor
+from PySide6.QtGui import QAction, QIcon, QPainter, QPen, QPixmap, QColor, QFont
 from PySide6.QtCore import Signal, QSize, Qt
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.backends.backend_qtagg import NavigationToolbar2QT as NavigationToolbar
@@ -55,7 +55,7 @@ class PlotSettingsDialog(QDialog):
         return self.chk_auto.isChecked(), self.spin_min.value(), self.spin_max.value()
 
 class CustomToolbar(NavigationToolbar):
-    """Custom Toolbar that adds a Scaling button."""
+    """Custom Toolbar that adds a Scaling button using a Unicode character."""
     sig_open_scaling = Signal()
 
     def __init__(self, canvas, parent=None):
@@ -65,15 +65,21 @@ class CustomToolbar(NavigationToolbar):
         self.btn_scale = QToolButton(self)
         self.btn_scale.setToolTip("Configure Plot Scaling (Min/Max)")
         
-        # 2. Draw the Icon Programmatically
-        icon = self._create_arrow_icon()
-        self.btn_scale.setIcon(icon)
-        self.btn_scale.setIconSize(QSize(24, 24)) # Display size
+        # 2. Set the Unicode character (⇕) and make it bold
+        self.btn_scale.setText("⇕") 
+        font = self.btn_scale.font()
+        font.setBold(True)
+        
+        # Use QFont.Weight enum for PySide6 compatibility
+        font.setWeight(QFont.Weight.Black) 
+        
+        # Updated font size to 20
+        font.setPointSize(24) 
+        self.btn_scale.setFont(font)
         
         self.btn_scale.clicked.connect(self.sig_open_scaling.emit)
 
-        # 3. Position it correctly (Left-aligned with other buttons)
-        # We insert it BEFORE the coordinates label so it isn't pushed to the far right.
+        # 3. Position logic
         target_action = None
         for action in self.actions():
             if self.widgetForAction(action) == self.locLabel:
@@ -86,46 +92,6 @@ class CustomToolbar(NavigationToolbar):
         else:
             self.addSeparator()
             self.addWidget(self.btn_scale)
-
-    def _create_arrow_icon(self):
-        """Draws a thick double-headed arrow onto a transparent pixmap."""
-        size = 64 # Draw at high res
-        pixmap = QPixmap(size, size)
-        pixmap.fill(Qt.transparent)
-        
-        painter = QPainter(pixmap)
-        try:
-            painter.setRenderHint(QPainter.Antialiasing)
-            
-            # Style settings
-            color = QColor(0, 0, 0) # Black arrow
-            pen = QPen(color)
-            pen.setWidth(8) # Very thick lines
-            pen.setCapStyle(Qt.RoundCap)
-            pen.setJoinStyle(Qt.RoundJoin)
-            painter.setPen(pen)
-            
-            # Coordinates
-            center_x = size // 2
-            top_y = 10
-            bot_y = size - 10
-            arrow_w = 12 # Width of arrow head wings
-            arrow_h = 12 # Height of arrow head wings
-            
-            # Draw Vertical Line
-            painter.drawLine(center_x, top_y, center_x, bot_y)
-            
-            # Draw Top Arrowhead
-            painter.drawLine(center_x, top_y, center_x - arrow_w, top_y + arrow_h)
-            painter.drawLine(center_x, top_y, center_x + arrow_w, top_y + arrow_h)
-            
-            # Draw Bottom Arrowhead
-            painter.drawLine(center_x, bot_y, center_x - arrow_w, bot_y - arrow_h)
-            painter.drawLine(center_x, bot_y, center_x + arrow_w, bot_y - arrow_h)
-        finally:
-            painter.end() # Ensure cleanup even if drawing fails
-            
-        return QIcon(pixmap)
 
 class MatplotlibWidget(QWidget):
     # Emits (autoscale, ymin, ymax) when user changes settings in the dialog

@@ -1,0 +1,26 @@
+analysis_mode_index: 0
+band_filter_order: 3
+block_size_ms: 100.0
+calibration_factor: 1.0
+current_dose_standard: OSHA
+dose_standards:
+  NIOSH:
+    criterion_level: 85
+    exchange_rate: 3
+    threshold: 80
+  OSHA:
+    criterion_level: 90
+    exchange_rate: 5
+    threshold: 80
+  USER:
+    criterion_level: 85
+    exchange_rate: 3
+    threshold: 80
+last_directory: C:\Users\ralph\git\VSLM\python\tests
+leq_interval_index: 1
+plot_autoscale: true
+plot_ymax: 120.0
+plot_ymin: 0.0
+ref_pressure: 2.0e-05
+speed: Fast
+weighting: A

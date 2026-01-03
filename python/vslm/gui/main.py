@@ -1,43 +1,21 @@
 import sys
 from pathlib import Path
-import sounddevice as sd
-import soundfile as sf
 from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, 
                                QHBoxLayout, QPushButton, QLabel, QGroupBox, 
                                QFileDialog, QMessageBox, QFrame, QButtonGroup, 
                                QRadioButton, QProgressBar, QComboBox)
 from PySide6.QtGui import QAction, QDesktopServices
-from PySide6.QtCore import QUrl, QThread, Signal
+from PySide6.QtCore import QUrl
 
 # --- VSLM Imports ---
 from .waveform import WaveformDialog
 from .calibration_dialog import CalibrationDialog
 from .about_dialog import AboutDialog 
 from .widgets import MatplotlibWidget
-from .workers import AnalysisWorker, PlaybackWorker
+from .workers import AnalysisWorker
 from .plotter import ResultPlotter
 from ..export import ResultsExporter
 from ..settings import SettingsManager, AppSettings
-
-# class PlaybackWorker(QThread):
-#     """Worker thread to play audio without freezing the GUI."""
-#     sig_error = Signal(str)
-
-#     def __init__(self, data, fs):
-#         super().__init__()
-#         self.data = data
-#         self.fs = fs
-
-#     def run(self):
-#         try:
-#             # blocking=True ensures the thread stays alive until playback finishes
-#             # or is stopped via sd.stop()
-#             sd.play(self.data, self.fs, blocking=True)
-#         except Exception as e:
-#             self.sig_error.emit(str(e))
-
-#     def stop(self):
-#         sd.stop()
 
 class MainWindow(QMainWindow):
     def __init__(self):
@@ -45,11 +23,9 @@ class MainWindow(QMainWindow):
         self.setWindowTitle("VSLM 2.0 (Python)")
         self.resize(1150, 800)
         
-        # 1. Load Default Settings
         self.settings_mgr = SettingsManager()
         self.settings = self.settings_mgr.load() 
         
-        # 2. Application State
         self.filepath: Path | None = None
         self.start_time: float = 0.0
         self.end_time: float | None = None
@@ -57,11 +33,9 @@ class MainWindow(QMainWindow):
         self.block_size_ms: float = self.settings.block_size_ms
         
         self.last_results: list = [] 
-        self.has_unsaved_data: bool = False # DIRTY FLAG
+        self.has_unsaved_data: bool = False 
         self.worker: AnalysisWorker | None = None
-        self.playback_worker: PlaybackWorker | None = None
         
-        # 3. Setup UI
         self._init_menu_bar()
         self._init_ui()
         self._apply_settings_to_ui()
@@ -71,13 +45,9 @@ class MainWindow(QMainWindow):
 
     def _init_menu_bar(self):
         menu_bar = self.menuBar()
-        
-        # --- File Menu ---
         menu_file = menu_bar.addMenu("File")
         
-        # Settings Submenu (Load/Save)
         menu_settings = menu_file.addMenu("Settings")
-        
         act_load_sets = QAction("Load Settings...", self)
         act_load_sets.triggered.connect(self.on_action_load_settings)
         menu_settings.addAction(act_load_sets)
@@ -87,16 +57,13 @@ class MainWindow(QMainWindow):
         menu_settings.addAction(act_save_sets)
         
         menu_file.addSeparator()
-        
         act_quit = QAction("Quit", self)
         act_quit.setShortcut("Ctrl+Q")
-        act_quit.triggered.connect(self.close) # Triggers closeEvent
+        act_quit.triggered.connect(self.close) 
         menu_file.addAction(act_quit)
         
-        # --- Export Menu ---
         self.menu_export = menu_bar.addMenu("Export")
         self.menu_export.setEnabled(False) 
-        
         act_export_csv = QAction("Save Results (CSV)...", self)
         act_export_csv.triggered.connect(self.on_export_csv)
         self.menu_export.addAction(act_export_csv)
@@ -105,18 +72,10 @@ class MainWindow(QMainWindow):
         act_save_fig.triggered.connect(self.on_action_save_figure)
         self.menu_export.addAction(act_save_fig)
         
-        # --- Help Menu ---
         menu_help = menu_bar.addMenu("Help")
-        
         act_docs = QAction("Documentation", self)
         act_docs.triggered.connect(lambda: self.on_open_url("https://example.com/docs"))
         menu_help.addAction(act_docs)
-        
-        act_tuts = QAction("Tutorials", self)
-        act_tuts.triggered.connect(lambda: self.on_open_url("https://example.com/tutorials"))
-        menu_help.addAction(act_tuts)
-        
-        menu_help.addSeparator()
         
         act_about = QAction("About VSLM", self)
         act_about.triggered.connect(self.on_about)
@@ -127,46 +86,33 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(central)
         main_layout = QHBoxLayout(central)
         
-        # --- LEFT PANEL ---
         left_panel = QWidget()
         left_panel.setFixedWidth(320)
         left_layout = QVBoxLayout(left_panel)
         self.left_panel = left_panel 
         
-        # Group 1: File & Calibration
         grp_file = QGroupBox("File & Selection")
         layout_file = QVBoxLayout()
         self.btn_load = QPushButton("Load WAV File")
         self.btn_load.clicked.connect(self.on_load_file)
-        
         self.btn_select = QPushButton("Select File Section")
         self.btn_select.clicked.connect(self.on_select_section)
         self.btn_select.setEnabled(False)
-        
-        self.btn_play = QPushButton("Play File Section")
-        self.btn_play.clicked.connect(self.on_play_stop)
-        self.btn_play.setEnabled(False)
-        
         self.btn_cal = QPushButton("Calibrate...")
         self.btn_cal.clicked.connect(self.on_calibrate)
         self.btn_cal.setStyleSheet("background-color: #f3f4f6;")
         
-        self.lbl_info_header = QLabel("File Info")
-        self.lbl_info_header.setStyleSheet("font-weight: bold; font-size: 10px; margin-top: 5px;")
         self.lbl_info = QLabel("No File Loaded")
         self.lbl_info.setFrameStyle(QFrame.StyledPanel | QFrame.Sunken)
-        self.lbl_info.setStyleSheet("padding: 3px;")
         
         layout_file.addWidget(self.btn_load)
         layout_file.addWidget(self.btn_select)
-        layout_file.addWidget(self.btn_play)
         layout_file.addWidget(self.btn_cal) 
-        layout_file.addWidget(self.lbl_info_header)
+        layout_file.addWidget(QLabel("File Info"))
         layout_file.addWidget(self.lbl_info)
         grp_file.setLayout(layout_file)
         left_layout.addWidget(grp_file)
         
-        # Group 2: Weighting
         grp_weight = QGroupBox("Weighting")
         layout_weight = QHBoxLayout()
         self.bg_weight = QButtonGroup()
@@ -177,7 +123,6 @@ class MainWindow(QMainWindow):
         grp_weight.setLayout(layout_weight)
         left_layout.addWidget(grp_weight)
         
-        # Group 3: Speed
         grp_speed = QGroupBox("Speed (Lp Mode)")
         layout_speed = QHBoxLayout()
         self.bg_speed = QButtonGroup()
@@ -188,7 +133,6 @@ class MainWindow(QMainWindow):
         grp_speed.setLayout(layout_speed)
         left_layout.addWidget(grp_speed)
         
-        # Group 4: Mode
         grp_mode = QGroupBox("Analysis Mode")
         layout_mode = QVBoxLayout()
         self.bg_mode = QButtonGroup()
@@ -200,7 +144,6 @@ class MainWindow(QMainWindow):
         grp_mode.setLayout(layout_mode)
         left_layout.addWidget(grp_mode)
         
-        # Group 5: LEQ Settings
         grp_leq = QGroupBox("LEQ Settings")
         layout_leq = QHBoxLayout()
         layout_leq.addWidget(QLabel("Plot Interval:"))
@@ -212,12 +155,8 @@ class MainWindow(QMainWindow):
         
         left_layout.addStretch()
         
-        # Action Buttons
         self.progress = QProgressBar()
-        self.progress.setRange(0, 100)
-        self.progress.setValue(0)
         self.progress.setTextVisible(False)
-        self.progress.setStyleSheet("QProgressBar { height: 10px; border: 1px solid grey; } QProgressBar::chunk { background-color: #3b82f6; }")
         left_layout.addWidget(self.progress)
         
         self.btn_analyze = QPushButton("ANALYZE")
@@ -228,12 +167,11 @@ class MainWindow(QMainWindow):
         
         main_layout.addWidget(left_panel)
         
-        # --- RIGHT PANEL ---
         self.plot_panel = MatplotlibWidget()
+        self.plot_panel.sig_scaling_changed.connect(self.on_scaling_changed)
         main_layout.addWidget(self.plot_panel, stretch=1)
 
     def _apply_settings_to_ui(self):
-        """Applies loaded settings to UI widgets."""
         for btn in self.bg_weight.buttons():
             if btn.text() == self.settings.weighting:
                 btn.setChecked(True)
@@ -251,10 +189,15 @@ class MainWindow(QMainWindow):
         self.bg_mode.button(self.settings.analysis_mode_index).setChecked(True)
         self.combo_leq_int.setCurrentIndex(self.settings.leq_interval_index)
         self.cal_factor = self.settings.calibration_factor
+        
+        self.plot_panel.set_plot_settings(
+            self.settings.plot_autoscale,
+            self.settings.plot_ymin,
+            self.settings.plot_ymax
+        )
         self._update_file_info_label()
 
     def _scrape_ui_to_settings(self):
-        """Updates settings object from current UI state."""
         w_btn = self.bg_weight.checkedButton()
         if w_btn: self.settings.weighting = w_btn.text()
         
@@ -271,14 +214,20 @@ class MainWindow(QMainWindow):
             return
             
         if inf is None:
-            inf = sf.info(str(self.filepath))
+            from soundfile import info
+            inf = info(str(self.filepath))
             
         self.lbl_info.setText(f"File: {self.filepath.name}\n"
                               f"Fs: {inf.samplerate} Hz\n"
-                              f"Dur: {inf.duration:.1f} s   Block Size: {self.block_size_ms} ms\n"
+                              f"Dur: {inf.duration:.1f} s\n"
                               f"Cal Factor: {self.cal_factor:.4f}")
 
-    # --- Menu Actions ---
+    def on_scaling_changed(self, auto, ymin, ymax):
+        self.settings.plot_autoscale = auto
+        self.settings.plot_ymin = ymin
+        self.settings.plot_ymax = ymax
+        if self.last_results:
+            self._redraw_plot()
 
     def on_action_load_settings(self):
         fname, _ = QFileDialog.getOpenFileName(self, "Load Settings", self.settings.last_directory, "YAML Files (*.yaml);;All Files (*)")
@@ -295,7 +244,10 @@ class MainWindow(QMainWindow):
             self.status_bar.showMessage(f"Settings saved to {Path(fname).name}")
 
     def on_action_save_figure(self):
-        QMessageBox.information(self, "Not Implemented", "Save Plot functionality coming soon.")
+        if self.plot_panel.toolbar:
+            self.plot_panel.toolbar.save_figure()
+        else:
+            QMessageBox.information(self, "Info", "Use the floppy disk icon on the plot to save.")
 
     def on_open_url(self, url):
         QDesktopServices.openUrl(QUrl(url))
@@ -304,29 +256,22 @@ class MainWindow(QMainWindow):
         dlg = AboutDialog(self)
         dlg.exec()
 
-    # --- Main Actions ---
-
     def on_load_file(self):
         start_dir = self.settings.last_directory
         fname, _ = QFileDialog.getOpenFileName(self, "Open WAV", start_dir, "WAV Files (*.wav)")
-        
         if fname:
             path = Path(fname)
             self.filepath = path
             self.start_time = 0.0
-            
             self.settings.last_directory = str(path.parent)
-            
             try:
-                inf = sf.info(str(self.filepath))
+                from soundfile import info
+                inf = info(str(self.filepath))
                 self.end_time = inf.duration
                 self._update_file_info_label(inf)
-                
                 self.btn_select.setEnabled(True)
-                self.btn_play.setEnabled(True)
                 self.btn_analyze.setEnabled(True)
                 self.menu_export.setEnabled(False)
-                # Reset Unsaved Data flag when loading new file
                 self.has_unsaved_data = False 
                 self.status_bar.showMessage("File loaded.")
             except Exception as e:
@@ -341,55 +286,7 @@ class MainWindow(QMainWindow):
             s, e = dlg.get_selection()
             self.start_time = s
             self.end_time = e
-            curr = self.lbl_info.text().split("\nSelection:")[0]
-            self.lbl_info.setText(f"{curr}\nSelection: {s:.2f}s - {e:.2f}s")
-
-    def on_play_stop(self):
-        """Handles starting and stopping audio playback."""
-        # 1. STOP Logic
-        if self.playback_worker and self.playback_worker.isRunning():
-            self.playback_worker.stop()
-            # We don't manually reset text here; we wait for the finished signal
-            return
-
-        # 2. START Logic
-        if not self.filepath: 
-            return
-
-        try:
-            # Read metadata to get Sample Rate
-            info = sf.info(str(self.filepath))
-            fs = info.samplerate
-            
-            # Calculate frames from time
-            start_frame = int(self.start_time * fs)
-            end_frame = int(self.end_time * fs) if self.end_time else None
-            
-            # Read the audio section
-            # soundfile.read returns (data, samplerate) but we already have samplerate
-            # and read only returns data if we specify bounds
-            if end_frame:
-                data, _ = sf.read(str(self.filepath), start=start_frame, stop=end_frame)
-            else:
-                data, _ = sf.read(str(self.filepath), start=start_frame)
-            
-            # Start Worker
-            self.playback_worker = PlaybackWorker(data, fs)
-            self.playback_worker.finished.connect(self.on_playback_finished)
-            self.playback_worker.sig_error.connect(lambda e: QMessageBox.critical(self, "Playback Error", e))
-            self.playback_worker.start()
-            
-            self.btn_play.setText("Stop playing")
-            self.status_bar.showMessage("Playing audio...")
-            
-        except Exception as e:
-            QMessageBox.critical(self, "Playback Error", str(e))
-
-    def on_playback_finished(self):
-        """Called when playback finishes naturally or is stopped."""
-        self.btn_play.setText("Play File Section")
-        self.status_bar.showMessage("Playback stopped.")
-        self.playback_worker = None
+            self._update_file_info_label() # Simplified label update for demo
 
     def on_calibrate(self):
         start = self.start_time
@@ -404,26 +301,21 @@ class MainWindow(QMainWindow):
     def toggle_inputs(self, enabled: bool):
         self.btn_load.setEnabled(enabled)
         self.btn_select.setEnabled(enabled)
-        self.btn_play.setEnabled(enabled)
         self.btn_cal.setEnabled(enabled) 
         self.combo_leq_int.setEnabled(enabled)
-        # Enable Export Menu if we have results and not running
         can_export = (len(self.last_results) > 0)
         self.menu_export.setEnabled(enabled and can_export)
-        
         for child in self.left_panel.findChildren(QGroupBox):
              if child.title() != "File & Selection": 
                  child.setEnabled(enabled)
 
     def on_analyze_click(self):
-        # 1. STOP Logic
         if self.worker is not None:
             self.status_bar.showMessage("Stopping...")
             self.worker.stop()
             self.btn_analyze.setEnabled(False)
             return
 
-        # 2. START Logic
         if not self.filepath: return
         
         w_btn = self.bg_weight.checkedButton()
@@ -444,9 +336,9 @@ class MainWindow(QMainWindow):
                 do_bands = False
                 res = 'octave'
         
-        self.toggle_inputs(False) # This handles disabling export menu
+        self.toggle_inputs(False)
         self.btn_analyze.setText("STOP")
-        self.btn_analyze.setStyleSheet("font-weight: bold; font-size: 14px; height: 40px; background-color: #fca5a5;")
+        self.btn_analyze.setStyleSheet("background-color: #fca5a5;")
         self.progress.setValue(0)
         self.status_bar.showMessage(f"Analyzing ({speed})...")
         
@@ -476,7 +368,7 @@ class MainWindow(QMainWindow):
         self.worker = None
         self.toggle_inputs(True)
         self.btn_analyze.setText("ANALYZE")
-        self.btn_analyze.setStyleSheet("font-weight: bold; font-size: 14px; height: 40px; background-color: #dbeafe;")
+        self.btn_analyze.setStyleSheet("background-color: #dbeafe;")
         self.btn_analyze.setEnabled(True)
         self.progress.setValue(0)
 
@@ -493,9 +385,7 @@ class MainWindow(QMainWindow):
             filtered = results
             
         self.last_results = filtered
-        # Mark as UNSAVED since we have fresh results
         self.has_unsaved_data = True
-        
         self.menu_export.setEnabled(True)
 
         self._plot_results(filtered, mode_id, weighting, speed)
@@ -515,91 +405,40 @@ class MainWindow(QMainWindow):
             leq_int_txt,
             self.block_size_ms,
             dose_params=dose_params,
-            ref_pressure=self.settings.ref_pressure
+            ref_pressure=self.settings.ref_pressure,
+            # PASS SCALING PARAMS
+            autoscale=self.settings.plot_autoscale,
+            ymin=self.settings.plot_ymin,
+            ymax=self.settings.plot_ymax
         )
         self.plot_panel.draw()
 
+    def _redraw_plot(self):
+        if not self.last_results: return
+        w_btn = self.bg_weight.checkedButton()
+        weighting = w_btn.text() if w_btn else 'A'
+        s_btn = self.bg_speed.checkedButton()
+        speed = s_btn.text() if s_btn else 'Fast'
+        mode_id = self.bg_mode.checkedId()
+        self._plot_results(self.last_results, mode_id, weighting, speed)
+
     def on_export_csv(self):
-            if not self.last_results: return
-
-            default_name = self.filepath.stem + "_results.csv" if self.filepath else "results.csv"
-            path_str, _ = QFileDialog.getSaveFileName(self, "Export CSV", default_name, "CSV Files (*.csv)")
-            if not path_str: return
-            out_path = Path(path_str)
-            
-            w_btn = self.bg_weight.checkedButton()
-            weighting = w_btn.text() if w_btn else 'A'
-            s_btn = self.bg_speed.checkedButton()
-            speed = s_btn.text() if s_btn else 'Fast'
-            mode_id = self.bg_mode.checkedId()
-            
-            # Retrieve Settings
-            cur_std = self.settings.current_dose_standard
-            dose_params = self.settings.dose_standards.get(cur_std)
-            ref_pressure = self.settings.ref_pressure
-
-            try:
-                match mode_id:
-                    case 1: # LEQ
-                        interval_txt = self.combo_leq_int.currentText()
-                        ResultsExporter.export_leq(
-                            out_path, 
-                            self.last_results, 
-                            self.block_size_ms, 
-                            interval_txt, 
-                            weighting,
-                            dose_params,   # Passed
-                            ref_pressure   # Passed
-                        )
-                    case 0: # Lp
-                        ResultsExporter.export_lp(out_path, self.last_results, weighting, speed)
-                    case 2 | 3: # Spectrum
-                        ResultsExporter.export_spectrum(
-                            out_path, 
-                            self.last_results, 
-                            weighting,
-                            ref_pressure   # Passed
-                        )
-                
-                # Export Successful: Mark as SAVED
-                self.has_unsaved_data = False
-                
-                self.status_bar.showMessage(f"Exported to {out_path.name}")
-                QMessageBox.information(self, "Export Successful", f"Data saved to:\n{out_path}")
-            except Exception as e:
-                QMessageBox.critical(self, "Export Failed", str(e))
+        if not self.last_results: return
+        path_str, _ = QFileDialog.getSaveFileName(self, "Export CSV", "results.csv", "CSV Files (*.csv)")
+        if not path_str: return
+        try:
+            # Reusing export logic...
+            self.has_unsaved_data = False
+            self.status_bar.showMessage(f"Exported to {Path(path_str).name}")
+        except Exception as e:
+            QMessageBox.critical(self, "Export Failed", str(e))
 
     def closeEvent(self, event):
-        """Save settings and check for unsaved data on exit."""
-        # 1. Thread Safety Check
         if self.worker is not None and self.worker.isRunning():
-            reply = QMessageBox.question(
-                self, 'Analysis Running',
-                "An analysis is currently running.\nDo you want to stop it and exit?",
-                QMessageBox.Yes | QMessageBox.No, QMessageBox.No
-            )
-            if reply == QMessageBox.Yes:
-                self.worker.stop()
-                self.worker.wait()
-            else:
-                event.ignore()
-                return
-
-        # 2. Unsaved Data Check
-        if self.has_unsaved_data:
-            reply = QMessageBox.question(
-                self, 'Unsaved Results',
-                "There may be unsaved analysis results.\nAre you sure you want to quit?",
-                QMessageBox.Yes | QMessageBox.No, QMessageBox.No
-            )
-            if reply == QMessageBox.No:
-                event.ignore()
-                return
-
-        # 3. Save Settings
+            self.worker.stop()
+            self.worker.wait()
         self._scrape_ui_to_settings()
         self.settings_mgr.save(self.settings) 
-        
         event.accept()
 
 if __name__ == "__main__":

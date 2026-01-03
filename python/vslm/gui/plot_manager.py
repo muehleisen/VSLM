@@ -1,7 +1,7 @@
 import numpy as np
 import traceback
 from matplotlib.figure import Figure
-from .. import leq
+from .. import leq_calculator
 from ..constants import LEQ_INTERVAL_MAP # New Import
 
 class ResultPlotter:

@@ -1,7 +1,7 @@
 import csv
 from pathlib import Path
 import numpy as np
-from . import leq
+from . import leq_calculator
 from .constants import LEQ_INTERVAL_MAP # New Import
 
 class ResultsExporter:

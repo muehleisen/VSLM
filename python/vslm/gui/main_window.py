@@ -8,15 +8,16 @@ from PySide6.QtGui import QAction, QDesktopServices
 from PySide6.QtCore import QUrl
 
 # --- VSLM Imports ---
-from .waveform import WaveformDialog
+from .waveform_dialog import WaveformDialog
 from .calibration_dialog import CalibrationDialog
 from .about_dialog import AboutDialog 
-from .widgets import MatplotlibWidget
-from .workers import AnalysisWorker
-from .plotter import ResultPlotter
-from ..export import ResultsExporter
-from ..settings import SettingsManager, AppSettings
+from .plot_widget import MatplotlibWidget
+from .analysis_worker import AnalysisWorker
+from .plot_manager import ResultPlotter
+from ..result_exporter import ResultsExporter
+from ..settings_manager import SettingsManager, AppSettings
 from ..constants import LEQ_INTERVAL_MAP # New Import
+
 
 class MainWindow(QMainWindow):
     def __init__(self):

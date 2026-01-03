@@ -3,8 +3,8 @@ import soundfile as sf
 from pathlib import Path
 from typing import Generator, Any
 
-from .filters.weighting import WeightingFilter
-from .filters.ansi import OctaveFilterBank
+from .filters.weighting_filters import WeightingFilter
+from .filters.octave_filters import OctaveFilterBank
 from .constants import Weighting, ResponseSpeed, BandResolution
 
 class TimeWeightingDetector:

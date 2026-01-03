@@ -1,13 +1,20 @@
-import matplotlib.pyplot as plt
 import numpy as np
-from .. import leq
 import traceback
+from matplotlib.figure import Figure
+from .. import leq
+from ..constants import LEQ_INTERVAL_MAP # New Import
 
 class ResultPlotter:
     @staticmethod
-    def plot(figure, results, mode_id, weighting, speed, leq_int_txt, block_size_ms, 
-             dose_params=None, ref_pressure=20e-6, 
-             # NEW parameters
+    def plot(figure: Figure, 
+             results: list, 
+             mode_id: int, 
+             weighting: str, 
+             speed: str, 
+             leq_interval_key,     # Expects Enum or Key
+             block_size_ms: float,
+             dose_params: dict,
+             ref_pressure: float,
              autoscale=True, ymin=0.0, ymax=120.0):
         
         figure.clear()
@@ -18,10 +25,9 @@ class ResultPlotter:
             return
 
         try:
-            # Dispatch based on Mode
-            if mode_id == 1: # LEQ
+            if mode_id == 1: # LEQ MODE
                 ResultPlotter._plot_leq_dashboard(
-                    figure, results, weighting, leq_int_txt, 
+                    figure, results, weighting, leq_interval_key, 
                     block_size_ms, dose_params, ref_pressure,
                     autoscale, ymin, ymax
                 )
@@ -37,40 +43,38 @@ class ResultPlotter:
                     autoscale, ymin, ymax
                 )
         except Exception as e:
-            # Fallback if specific plotter fails
             ax = figure.add_subplot(111)
             ax.text(0.5, 0.5, f"Plot Error:\n{str(e)}", ha='center', va='center', color='red')
             print(f"Plot Error Traceback:\n{traceback.format_exc()}")
-
+        
         figure.tight_layout()
 
     @staticmethod
-    def _plot_leq_dashboard(fig, results, weighting, interval_txt, 
+    def _plot_leq_dashboard(fig, results, weighting, interval_key, 
                             block_size_ms, dose_params, ref_pressure,
                             autoscale, ymin, ymax):
         
-        # Safe Interval Parsing
-        intervals = {"100 ms": 0.1, "1 sec": 1.0, "10 sec": 10.0, 
-                     "1 min": 60.0, "15 min": 900.0, "1 hour": 3600.0}
-        interval = intervals.get(interval_txt, 1.0)
-        
-        # Calculate Stats
+        # --- REFACTOR: Map Lookup ---
+        # Fallback to default if key is missing/invalid
+        if interval_key in LEQ_INTERVAL_MAP:
+            interval_txt, interval_sec = LEQ_INTERVAL_MAP[interval_key]
+        else:
+            interval_txt, interval_sec = "1 sec", 1.0
+
         stats = leq.calculate_leq_analysis(
-            results, block_size_ms, interval, dose_params, ref_pressure
+            results, block_size_ms, interval_sec, dose_params, ref_pressure
         )
         
         # Top Plot (Time History)
         ax1 = fig.add_subplot(2, 1, 1)
         if len(stats.history['time']) > 0:
             t_plot = list(stats.history['time'])
-            # Extend last point for step plot
-            t_plot.append(t_plot[-1] + interval)
+            t_plot.append(t_plot[-1] + interval_sec)
             l_plot = list(stats.history['leq'])
             l_plot.append(l_plot[-1])
             
             ax1.step(t_plot, l_plot, where='post', color='b', linewidth=1.5)
             
-            # Apply Scaling
             if not autoscale:
                 ax1.set_ylim(ymin, ymax)
             else:
@@ -86,11 +90,9 @@ class ResultPlotter:
         
         col1, col2, col3 = 0.05, 0.35, 0.65
         
-        # Overall
         ax2.text(0.5, 0.95, f"Overall LEQ: {stats.overall:.1f} dB", 
                  ha='center', fontsize=14, fontweight='bold', color='blue')
         
-        # Stats Columns
         ax2.text(col1, 0.80, f"Lmax: {stats.max:.1f} dB")
         ax2.text(col1, 0.65, f"Lmin: {stats.min:.1f} dB")
         ax2.text(col1, 0.50, f"L10: {stats.ln[10]:.1f} dB")
@@ -103,9 +105,8 @@ class ResultPlotter:
         ax2.text(col2, 0.35, f"L60: {stats.ln[60]:.1f} dB")
         ax2.text(col2, 0.20, f"L80: {stats.ln[80]:.1f} dB")
         
-        # Dose
-        std_name = dose_params.get('name', 'Standard')
-        # Handle case where stats.dose might miss a key (robustness)
+        # Handle custom vs standard dose labels safely
+        std_name = dose_params.get('name', 'Custom')
         dose_val = stats.dose.get('dose', 0.0)
         twa_val = stats.dose.get('twa', 0.0)
         
@@ -116,10 +117,8 @@ class ResultPlotter:
     @staticmethod
     def _plot_lp_history(fig, results, weighting, speed, autoscale, ymin, ymax):
         ax = fig.add_subplot(1, 1, 1)
-        
-        # Extract data safely
         t = [r.get('time', 0) for r in results]
-        l = [r.get('lp', -300) for r in results] # Default to silence if key missing
+        l = [r.get('lp', -300) for r in results] 
         
         ax.plot(t, l)
         ax.set_title(f"Sound Pressure Level vs Time ({weighting}-weighted, {speed})")
@@ -127,36 +126,27 @@ class ResultPlotter:
         ax.set_ylabel("Level (dB)")
         ax.grid(True)
         
-        # Apply Scaling
         if not autoscale:
             ax.set_ylim(ymin, ymax)
         else:
-            # If data is all -300 (silence), autoscale might look weird. 
-            # Force reasonable range if max < 0
-            if l and max(l) < 0:
-                ax.set_ylim(-100, 100) # Fallback view
-            else:
-                ax.autoscale(axis='y')
+            if l and max(l) < 0: ax.set_ylim(-100, 100)
+            else: ax.autoscale(axis='y')
 
     @staticmethod
     def _plot_spectrum(fig, results, weighting, is_third_octave, ref_pressure, 
                        autoscale, ymin, ymax):
         ax = fig.add_subplot(1, 1, 1)
-        
         last_res = results[-1]
         freqs = last_res.get('band_freqs', [])
         
-        # Average Spectrum Calculation
         if 'bands' in results[0]:
             energy_sums = np.zeros(len(freqs))
             count = 0
             for r in results:
                 if 'bands' in r:
-                    # Convert dB to Pressure^2
                     pressures = (10**(r['bands']/10.0)) * (ref_pressure**2)
                     energy_sums += pressures
                     count += 1
-            
             if count > 0:
                 mean_db = 10 * np.log10((energy_sums / count) / (ref_pressure**2) + 1e-30)
             else:
@@ -168,7 +158,6 @@ class ResultPlotter:
             x = np.arange(len(freqs))
             ax.bar(x, mean_db, color='#2ca02c', alpha=0.8)
             ax.set_xticks(x)
-            
             lbls = [f"{f/1000:.0f}k" if f >= 1000 else f"{f:.0f}" for f in freqs]
             if is_third_octave: 
                 lbls = [l if i % 3 == 0 else "" for i, l in enumerate(lbls)]
@@ -178,7 +167,6 @@ class ResultPlotter:
         ax.set_ylabel("Level (dB)")
         ax.grid(axis='y')
         
-        # Apply Scaling
         if not autoscale:
             ax.set_ylim(ymin, ymax)
         else:

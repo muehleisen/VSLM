@@ -16,6 +16,7 @@ from .workers import AnalysisWorker
 from .plotter import ResultPlotter
 from ..export import ResultsExporter
 from ..settings import SettingsManager, AppSettings
+from ..constants import LEQ_INTERVAL_MAP # New Import
 
 class MainWindow(QMainWindow):
     def __init__(self):
@@ -77,6 +78,11 @@ class MainWindow(QMainWindow):
         act_docs.triggered.connect(lambda: self.on_open_url("https://example.com/docs"))
         menu_help.addAction(act_docs)
         
+        act_tuts = QAction("Tutorials", self)
+        act_tuts.triggered.connect(lambda: self.on_open_url("https://example.com/tutorials"))
+        menu_help.addAction(act_tuts)
+        
+        menu_help.addSeparator()
         act_about = QAction("About VSLM", self)
         act_about.triggered.connect(self.on_about)
         menu_help.addAction(act_about)
@@ -148,7 +154,11 @@ class MainWindow(QMainWindow):
         layout_leq = QHBoxLayout()
         layout_leq.addWidget(QLabel("Plot Interval:"))
         self.combo_leq_int = QComboBox()
-        self.combo_leq_int.addItems(["100 ms", "1 sec", "10 sec", "1 min", "15 min", "1 hour"])
+        
+        # --- REFACTOR: Use Map to Populate ---
+        for key, (label, _) in LEQ_INTERVAL_MAP.items():
+            self.combo_leq_int.addItem(label, key) # Store Enum Key as UserData
+            
         layout_leq.addWidget(self.combo_leq_int)
         grp_leq.setLayout(layout_leq)
         left_layout.addWidget(grp_leq)
@@ -286,7 +296,7 @@ class MainWindow(QMainWindow):
             s, e = dlg.get_selection()
             self.start_time = s
             self.end_time = e
-            self._update_file_info_label() # Simplified label update for demo
+            self._update_file_info_label()
 
     def on_calibrate(self):
         start = self.start_time
@@ -392,7 +402,9 @@ class MainWindow(QMainWindow):
         self.status_bar.showMessage("Analysis Complete.")
 
     def _plot_results(self, results: list, mode_id: int, weighting: str, speed: str):
-        leq_int_txt = self.combo_leq_int.currentText()
+        # --- REFACTOR: Retrieve Enum Key ---
+        leq_int_key = self.combo_leq_int.currentData()
+        
         cur_std = self.settings.current_dose_standard
         dose_params = self.settings.dose_standards.get(cur_std)
         
@@ -402,11 +414,10 @@ class MainWindow(QMainWindow):
             mode_id,
             weighting,
             speed,
-            leq_int_txt,
+            leq_int_key, # Pass Key
             self.block_size_ms,
             dose_params=dose_params,
             ref_pressure=self.settings.ref_pressure,
-            # PASS SCALING PARAMS
             autoscale=self.settings.plot_autoscale,
             ymin=self.settings.plot_ymin,
             ymax=self.settings.plot_ymax
@@ -426,10 +437,46 @@ class MainWindow(QMainWindow):
         if not self.last_results: return
         path_str, _ = QFileDialog.getSaveFileName(self, "Export CSV", "results.csv", "CSV Files (*.csv)")
         if not path_str: return
+        
+        out_path = Path(path_str)
+        w_btn = self.bg_weight.checkedButton()
+        weighting = w_btn.text() if w_btn else 'A'
+        s_btn = self.bg_speed.checkedButton()
+        speed = s_btn.text() if s_btn else 'Fast'
+        mode_id = self.bg_mode.checkedId()
+        
+        cur_std = self.settings.current_dose_standard
+        dose_params = self.settings.dose_standards.get(cur_std)
+        ref_pressure = self.settings.ref_pressure
+
         try:
-            # Reusing export logic...
+            match mode_id:
+                case 1: # LEQ
+                    # --- REFACTOR: Retrieve Enum Key ---
+                    interval_key = self.combo_leq_int.currentData()
+                    
+                    ResultsExporter.export_leq(
+                        out_path, 
+                        self.last_results, 
+                        self.block_size_ms, 
+                        interval_key, # Pass Key
+                        weighting,
+                        dose_params,
+                        ref_pressure
+                    )
+                case 0: # Lp
+                    ResultsExporter.export_lp(out_path, self.last_results, weighting, speed)
+                case 2 | 3: # Spectrum
+                    ResultsExporter.export_spectrum(
+                        out_path, 
+                        self.last_results, 
+                        weighting,
+                        ref_pressure
+                    )
+            
             self.has_unsaved_data = False
-            self.status_bar.showMessage(f"Exported to {Path(path_str).name}")
+            self.status_bar.showMessage(f"Exported to {out_path.name}")
+            QMessageBox.information(self, "Export Successful", f"Data saved to:\n{out_path}")
         except Exception as e:
             QMessageBox.critical(self, "Export Failed", str(e))
 

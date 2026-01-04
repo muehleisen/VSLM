@@ -1,7 +1,7 @@
 import numpy as np
 import traceback
 from matplotlib.figure import Figure
-from .. import leq_calculator as leq
+from .. import leq_calculator
 from ..constants import LEQ_INTERVAL_MAP
 
 class ResultPlotter:
@@ -13,7 +13,8 @@ class ResultPlotter:
              speed: str, 
              leq_interval_key,
              block_size_ms: float,
-             dose_params: dict,
+             dose_params,        
+             dose_std_name: str,   
              ref_pressure: float,
              autoscale=True, ymin=0.0, ymax=120.0):
         
@@ -25,12 +26,11 @@ class ResultPlotter:
             return
 
         try:
-            # Implement Structural Pattern Matching (Python 3.10+)
             match mode_id:
                 case 1: # LEQ MODE
                     ResultPlotter._plot_leq_dashboard(
                         figure, results, weighting, leq_interval_key, 
-                        block_size_ms, dose_params, ref_pressure,
+                        block_size_ms, dose_params, dose_std_name, ref_pressure,
                         autoscale, ymin, ymax
                     )
                 case 0: # Lp
@@ -38,7 +38,7 @@ class ResultPlotter:
                         figure, results, weighting, speed,
                         autoscale, ymin, ymax
                     )
-                case 2 | 3: # Spectrum (2=Octave, 3=Third Octave)
+                case 2 | 3: # Spectrum
                     is_third = (mode_id == 3)
                     ResultPlotter._plot_spectrum(
                         figure, results, weighting, is_third, ref_pressure,
@@ -51,20 +51,17 @@ class ResultPlotter:
         
         figure.tight_layout()
 
-
     @staticmethod
     def _plot_leq_dashboard(fig, results, weighting, interval_key, 
-                            block_size_ms, dose_params, ref_pressure,
+                            block_size_ms, dose_params, dose_std_name, ref_pressure,
                             autoscale, ymin, ymax):
         
-        # --- REFACTOR: Map Lookup ---
-        # Fallback to default if key is missing/invalid
         if interval_key in LEQ_INTERVAL_MAP:
             interval_txt, interval_sec = LEQ_INTERVAL_MAP[interval_key]
         else:
             interval_txt, interval_sec = "1 sec", 1.0
 
-        stats = leq.calculate_leq_analysis(
+        stats = leq_calculator.calculate_leq_analysis(
             results, block_size_ms, interval_sec, dose_params, ref_pressure
         )
         
@@ -96,26 +93,30 @@ class ResultPlotter:
         ax2.text(0.5, 0.95, f"Overall LEQ: {stats.overall:.1f} dB", 
                  ha='center', fontsize=14, fontweight='bold', color='blue')
         
-        ax2.text(col1, 0.80, f"Lmax: {stats.max:.1f} dB")
-        ax2.text(col1, 0.65, f"Lmin: {stats.min:.1f} dB")
-        ax2.text(col1, 0.50, f"L10: {stats.ln[10]:.1f} dB")
-        ax2.text(col1, 0.35, f"L50: {stats.ln[50]:.1f} dB")
-        ax2.text(col1, 0.20, f"L90: {stats.ln[90]:.1f} dB")
+        # ax2.text(col1, 0.80, f"Lmax: {stats.max:.1f} dB")
+        # ax2.text(col1, 0.65, f"Lmin: {stats.min:.1f} dB")
+        # ax2.text(col1, 0.50, f"L10: {stats.ln[10]:.1f} dB")
+        # ax2.text(col1, 0.35, f"L50: {stats.ln[50]:.1f} dB")
+        # ax2.text(col1, 0.20, f"L90: {stats.ln[90]:.1f} dB")
+        ax2.text(col1, 0.60, f"Lmax: {stats.max:.1f} dB")
+        ax2.text(col1, 0.50, f"Lmin: {stats.min:.1f} dB")
+        ax2.text(col1, 0.40, f"L10: {stats.ln[10]:.1f} dB")
+        ax2.text(col1, 0.30, f"L20: {stats.ln[20]:.1f} dB")
+        ax2.text(col1, 0.20, f"L30: {stats.ln[30]:.1f} dB")
         
-        ax2.text(col2, 0.80, f"L20: {stats.ln[20]:.1f} dB")
-        ax2.text(col2, 0.65, f"L30: {stats.ln[30]:.1f} dB")
-        ax2.text(col2, 0.50, f"L40: {stats.ln[40]:.1f} dB")
-        ax2.text(col2, 0.35, f"L60: {stats.ln[60]:.1f} dB")
+        ax2.text(col2, 0.60, f"L40: {stats.ln[40]:.1f} dB")
+        ax2.text(col2, 0.50, f"L50: {stats.ln[50]:.1f} dB")
+        ax2.text(col2, 0.40, f"L60: {stats.ln[60]:.1f} dB")
+        ax2.text(col2, 0.30, f"L70: {stats.ln[70]:.1f} dB")
         ax2.text(col2, 0.20, f"L80: {stats.ln[80]:.1f} dB")
         
-        # Handle custom vs standard dose labels safely
-        std_name = dose_params.get('name', 'Custom')
+        # Dose Results
         dose_val = stats.dose.get('dose', 0.0)
         twa_val = stats.dose.get('twa', 0.0)
         
-        ax2.text(col3, 0.80, f"Dose ({std_name})", fontweight='bold')
-        ax2.text(col3, 0.65, f"Dose %: {dose_val:.1f}%")
-        ax2.text(col3, 0.50, f"TWA: {twa_val:.1f} dB")
+        ax2.text(col3, 0.60, f"Dose ({dose_std_name})", fontweight='bold')
+        ax2.text(col3, 0.50, f"Dose %: {dose_val:.1f}%")
+        ax2.text(col3, 0.40, f"TWA: {twa_val:.1f} dB")
 
     @staticmethod
     def _plot_lp_history(fig, results, weighting, speed, autoscale, ymin, ymax):
